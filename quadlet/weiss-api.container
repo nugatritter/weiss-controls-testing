@@ -11,7 +11,6 @@ PublishPort=8000:8000
 Volume=weiss-storage.volume:/app/storage
 Volume=%h/.config/weiss/roles.toml:/config/roles.toml:ro
 Environment=ROLES_CONFIG_PATH=/config/roles.toml
-Environment=ENABLE_HTTPS=false
 EnvironmentFile=%h/.config/weiss/weiss.env
 
 [Service]

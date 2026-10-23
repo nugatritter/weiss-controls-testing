@@ -7,12 +7,12 @@ After=weiss-api.service weiss-epicsws.service
 Image=localhost/weiss:latest
 ContainerName=weiss
 Network=weiss.network
-# Rootless darf Ports < 1024 nicht binden. Host-Port hier anpassen, falls nötig.
-PublishPort=8080:8081
+# Port 80 ist Pflicht (CORS der API). Rootless braucht dafür
+# net.ipv4.ip_unprivileged_port_start=80, siehe README.
+PublishPort=80:8081
 # weiss-epicsws läuft im Host-Netzwerk und ist über das Gateway erreichbar.
 PodmanArgs=--add-host=weiss-epicsws:host-gateway
 Environment=NODE_ENV=production
-Environment=ENABLE_HTTPS=false
 EnvironmentFile=%h/.config/weiss/weiss.env
 
 [Service]
