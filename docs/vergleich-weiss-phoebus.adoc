@@ -10,6 +10,8 @@
 :table-caption: Tabelle
 :weiss: https://github.com/weiss-controls/weiss/blob/850afe2b91071db5eddcc978c6a35bb18b5acb47/
 :phoebus: https://github.com/ControlSystemStudio/phoebus/blob/f041c41975c0062c4ae06f28d3545bdf6231e16b/
+:demoiocs: https://github.com/weiss-controls/weiss-demo-iocs/blob/03c6321d88195a111447b81713a655e791e86c53/
+:demoopis: https://github.com/weiss-controls/weiss-demo-opis/blob/72c6b28cc4c27e369cc73a6aa79af26d9391a681/
 
 [abstract]
 WEISS und Phoebus bedienen dasselbe Umfeld, EPICS-Leitsysteme, aber auf grundverschiedene Weise.
@@ -28,8 +30,9 @@ ergänzen sich.
 | Aussage | Beleg
 
 | WEISS deckt nur einen Teil von Phoebus ab: Anzeigen erstellen und bedienen. 22 Widgets stehen 46
-Widget-Typen gegenüber. Alarmserver, Archiv-Anbindung, Logbuch, Scan, Skripte und lokale
-oder simulierte PVs fehlen. | <<tab-widgets>>, <<tab-umfeld>>
+Widget-Typen gegenüber. Alarmserver, Archiv-Anbindung, Logbuch, Scan, Skripte und clientseitige
+Pseudo-PVs (`loc`, `sim`, `sys`, `formula`) fehlen. Für Demo und Test liefert das Projekt
+dagegen eigene IOCs mit simulierten Variablen mit. | <<tab-widgets>>, <<tab-pv>>, <<tab-umfeld>>
 
 | WEISS bietet, was Phoebus nicht mitbringt: Zugriff per Browser ohne Installation, eine
 integrierte Git-Versionierung mit Freigabe-Workflow und eine Anmeldung über OAuth2/OIDC. |
@@ -56,7 +59,13 @@ Widget-Typen als unterstützt, Regeln und Skripte werden nicht übernommen. | <<
 | Repository | https://github.com/weiss-controls/weiss | https://github.com/ControlSystemStudio/phoebus
 | Geprüfter Commit | `850afe2` (main, 19. Oktober 2026) | `f041c41` (master, 22. Oktober 2026)
 | Versionsstand | Tags bis `2.0.1`, `package.json` nennt `2.0.0` | `7.0.0-SNAPSHOT`, letztes Tag `v6.0.0`
+| Weitere Repositories | `weiss-demo-iocs` (`03c6321`, 11. Oktober 2026) und `weiss-demo-opis` (`72c6b28`, 13. Oktober 2026) | nicht zutreffend
 |===
+
+NOTE: Korrektur gegenüber der ersten Fassung: Dort wurden simulierte Variablen nur im Hauptrepository
+von WEISS gesucht und nicht gefunden. Übersehen wurde, dass die Doku auf zwei weitere Repositories
+verweist, die für Demo und Test simulierte Variablen bereitstellen. Die Tabellen in
+<<tab-pv>> und <<tab-umfeld>> sind entsprechend ergänzt.
 
 Vorgehen:
 
@@ -239,10 +248,23 @@ setzt `EPICS_DEFAULT_PROTOCOL` (Upstream-Vorgabe `pva`).
 `pv-jackie`, `pv-opva`). Jackie und OPVA habe ich nicht näher geprüft.
 | <<w5,W5>>, <<w8,W8>>, <<p5,P5>>
 
-| Lokale und simulierte PVs
-| Im Code nicht gefunden (kein `loc://`, `sim://`, `sys://`, keine Formeln).
-| `loc`, `sim`, `sys` und `formula` im PV-Kern.
+| Pseudo-PVs im Client (ohne IOC)
+| Im Code von WEISS nicht gefunden (kein `loc://`, `sim://`, `sys://`, keine Formeln).
+| `loc`, `sim`, `sys` und `formula` im PV-Kern. Die `sim`-PVs liefern unter anderem Sinus, Rampe,
+Rauschen, Flip-Flop und Zeichenketten.
 | <<w5,W5>>, <<p5,P5>>
+
+| Simulierte Variablen für Demo und Test
+| Eigenes Repository `weiss-demo-iocs` mit drei echten Soft-IOCs auf Basis des ESS-e3-Frameworks.
+Sie laufen laut Readme in der öffentlichen Live-Demo. *genericIO* (Präfix `demo:`): zehn Gruppen
+aus `bo`, `bi`, `ao`, `ai`, `stringout`, `stringin`, `mbbo`, `mbbi` (zum Beispiel `demo:ao01`),
+je ein Zufallswert im Sekundentakt (`demo:Random01` bis `Random10`) und ein simuliertes
+Drei-Phasen-System mit Sinus-Signalen und Wellenform-Puffern. *motorSim*: acht simulierte
+Motorachsen (`demo:Mtr1` bis `demo:Mtr8`). *ADSim*: areaDetector-Simulation mit zwei Kameras
+(Präfix `13SIM1:`), Bilder per Array-PV. Die passenden Anzeigen liegen in `weiss-demo-opis`.
+| Mit `sim://` ohne IOC nutzbar. Für Beispielanzeigen siehe Zeile „Demo und Beispiele“ in
+<<tab-umfeld>>.
+| <<w19,W19>>, <<w20,W20>>, <<p5,P5>>
 
 | Zugriffsrechte der PVs
 | Im Code der PV-Brücke und des PV-Speichers nicht gefunden.
@@ -404,6 +426,14 @@ Kein Alarmserver.
 | PV-Name im Kontextmenü kopieren.
 | Probe, PV-Tabelle, PV-Baum.
 | <<p2,P2>>
+
+| Demo und Beispiele
+| Öffentliche Live-Demo (`demo.weiss-controls.org`, laut Readme; nicht aufgerufen). Fünf
+Beispielanzeigen in `weiss-demo-opis`: Widget-Galerie, Bewegung, Prozess, Ein-/Ausgänge, ADSim.
+Sie lassen sich über den Dateibrowser von WEISS importieren.
+| 93 Einträge im Beispielordner des Display Builders, darunter Regeln, Skripte, Datenquellen und
+Formeln.
+| <<w19,W19>>, <<w20,W20>>, <<w21,W21>>, <<p11,P11>>
 |===
 
 [[tab-reife]]
@@ -523,6 +553,20 @@ Brücke liefert dann CA-Werte mit Präfix `ca://`.
 `scripts/build-images.sh` nutzt, funktionierte.
 | Für den Image-Bau das Skript verwenden.
 | Test
+
+| 14
+| Die Doku sagt, die Entwicklungs-Compose-Datei bringe einen `demoioc` mit. `docker-compose-dev.yml`
+enthält nur die Dienste `weiss-dev`, `weiss-epicsws-dev` und `weiss-api-dev`.
+| Die Demo-IOCs müssen separat aus `weiss-demo-iocs` gestartet werden. Die Doku ist an dieser
+Stelle veraltet.
+| `source.md`, `docker-compose-dev.yml`
+
+| 15
+| Die Demo-IOCs werden aus einem ESS-Conda-Kanal (`artifactory.esss.lu.se`) und conda-forge gebaut,
+auf Basis von `micromamba`, und laufen im Host-Netzwerk.
+| Der Bau braucht Zugriff auf diesen Kanal. Aus meiner Umgebung war er nicht erreichbar; ob er
+öffentlich zugänglich ist, habe ich nicht geprüft. Unter Podman wurde nichts davon getestet.
+| `.condarc`, `docker-compose.yml`
 |===
 
 [[tab-import]]
@@ -582,9 +626,13 @@ bzw. importiert werden, und die Pfade müssen übereinstimmen.
 | Phoebus
 | WEISS bietet dafür keine Entsprechung.
 
-| Lokale oder simulierte PVs und Formeln in Anzeigen
+| Pseudo-PVs und Formeln in Anzeigen, die ohne IOC laufen sollen
 | Phoebus
-| In WEISS im Code nicht gefunden.
+| `loc`, `sim`, `sys` und `formula` gibt es in WEISS im Code nicht.
+
+| Demo und Test mit simulierten Daten
+| Beide
+| WEISS: über `weiss-demo-iocs` (echte Soft-IOCs, eigener Aufbau nötig). Phoebus: `sim://` ohne IOC.
 
 | Rechte je Benutzer auf einzelne PVs
 | Keines ohne Zusatzarbeit
@@ -608,11 +656,15 @@ Unterschied im Umfang erklärt sich auch dadurch, dass Phoebus weit mehr Anwendu
 Phoebus fand nicht statt.
 * Lizenzfragen (GPL-3.0-or-later gegenüber EPL 1.0) sind nicht rechtlich bewertet.
 * Die Roadmap beider Projekte wurde nicht bewertet.
+* Die öffentliche Live-Demo von WEISS habe ich nicht aufgerufen. Angaben zu ihr stammen aus dem
+Readme von `weiss-demo-iocs`.
+* Die Demo-IOCs habe ich weder gebaut noch gestartet. Ihre Beschreibung beruht auf den Dateien im
+Repository.
 
 [[quellen]]
 == Quellenverzeichnis
 
-Alle Fundstellen sind auf die geprüften Commits fixiert (WEISS `850afe2`, Phoebus `f041c41`).
+Alle Fundstellen sind auf die geprüften Commits fixiert (WEISS `850afe2`, Phoebus `f041c41`, Demo-IOCs `03c6321`, Demo-OPIs `72c6b28`).
 
 .WEISS
 [cols="1,8"]
@@ -635,6 +687,9 @@ Alle Fundstellen sind auf die geprüften Commits fixiert (WEISS `850afe2`, Phoeb
 | [[w16]]W16 | {weiss}src/components/AlarmPanel[src/components/AlarmPanel], {weiss}src/components/AlarmBorder[src/components/AlarmBorder]: Alarmanzeige.
 | [[w17]]W17 | {weiss}src/utils/historyBuffers.tsx[historyBuffers.tsx]: Verlaufspuffer.
 | [[w18]]W18 | {weiss}src/components/SnapshotDialog[src/components/SnapshotDialog]: Snapshots.
+| [[w19]]W19 | Repository `weiss-demo-iocs`: {demoiocs}README.md[README.md], {demoiocs}docker-compose.yml[docker-compose.yml], {demoiocs}Dockerfile[Dockerfile], {demoiocs}.condarc[.condarc], {demoiocs}genericIO/st.cmd[genericIO/st.cmd], {demoiocs}genericIO/Db/genericIO.db[genericIO.db], {demoiocs}genericIO/Db/3PhaseSyst.db[3PhaseSyst.db], {demoiocs}motorSim/st.cmd[motorSim/st.cmd], {demoiocs}ADSim/st.cmd[ADSim/st.cmd] (Commit `03c6321`).
+| [[w20]]W20 | Repository `weiss-demo-opis`: {demoopis}README.md[README.md], {demoopis}Example1/example-widget-gallery.opi.json[Example1], {demoopis}Example2/example-motion.opi.json[Example2], {demoopis}Example3/example-process.opi.json[Example3], {demoopis}Example4/example-IO.opi.json[Example4], {demoopis}Example5/ADSim.opi.json[Example5] (Commit `72c6b28`).
+| [[w21]]W21 | {weiss}docs/src/developer/source.md[source.md], {weiss}docs/src/getting_started/quickstart.md[quickstart.md], {weiss}docker-compose-dev.yml[docker-compose-dev.yml]: Verweise auf die Demo-IOCs, Entwicklungs-Compose.
 |===
 
 .Phoebus
@@ -650,4 +705,5 @@ Alle Fundstellen sind auf die geprüften Commits fixiert (WEISS `850afe2`, Phoeb
 | [[p8]]P8 | {phoebus}app/display/actions/src/main/java/org/csstudio/display/actions[app/display/actions]: Aktionen.
 | [[p9]]P9 | {phoebus}app/display/Readme.md[app/display/Readme.md]: Display Builder, BOY-Kompatibilität.
 | [[p10]]P10 | {phoebus}docs/source/docker.rst[docs/source/docker.rst], {phoebus}docs/source/conf.py[docs/source/conf.py]: Docker, Copyright.
+| [[p11]]P11 | {phoebus}app/display/model/src/main/resources/examples[app/display/model/.../examples], {phoebus}core/pv/src/main/java/org/phoebus/pv/sim[core/pv/.../sim]: Beispielanzeigen, simulierte PVs.
 |===
