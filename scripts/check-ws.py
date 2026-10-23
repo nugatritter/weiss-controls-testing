@@ -13,12 +13,18 @@ Benötigt: pip install websockets
 import asyncio
 import json
 import sys
+import time
 
 import websockets
 
-COUNTER = "ca://WEISS:TEST:COUNTER"
-SETPOINT = "ca://WEISS:TEST:SETPOINT"
+COUNTER = "WEISS:TEST:COUNTER"
+SETPOINT = "WEISS:TEST:SETPOINT"
 TIMEOUT_S = 10
+
+
+def pv_name(raw: str) -> str:
+    """Entfernt ein Protokollpräfix wie 'ca://' oder 'pva://', falls die Brücke es mitsendet."""
+    return raw.split("://", 1)[-1]
 
 
 async def main() -> int:
@@ -26,35 +32,36 @@ async def main() -> int:
     url = args[0] if args else "ws://localhost:8080"
     do_write = "--write" in sys.argv
 
+    seen: dict[str, object] = {}
+    deadline = time.monotonic() + TIMEOUT_S
+
     async with websockets.connect(url, open_timeout=TIMEOUT_S) as ws:
         print(f"Verbunden mit {url}")
-        await ws.send(json.dumps({"type": "subscribe", "pvs": [COUNTER, SETPOINT]}))
+        await ws.send(json.dumps({"type": "subscribe", "pvs": ["ca://" + COUNTER, "ca://" + SETPOINT]}))
 
-        seen = {}
         if do_write:
             await asyncio.sleep(1)  # kurz warten, bis das Abo steht
-            await ws.send(json.dumps({"type": "write", "pv": SETPOINT, "value": 42.5}))
+            await ws.send(json.dumps({"type": "write", "pv": "ca://" + SETPOINT, "value": 42.5}))
             print("Schreibauftrag gesendet: WEISS:TEST:SETPOINT = 42.5")
 
-        try:
-            while True:
-                msg = json.loads(await asyncio.wait_for(ws.recv(), TIMEOUT_S))
-                if msg.get("type") != "update":
-                    continue
-                pv = msg.get("pv")
-                seen[pv] = msg.get("value")
-                print(f"  {pv} = {msg.get('value')}")
-                if "WEISS:TEST:COUNTER" in seen and not do_write:
-                    break
-                if do_write and seen.get("WEISS:TEST:SETPOINT") == 42.5:
-                    break
-        except asyncio.TimeoutError:
-            pass
+        while time.monotonic() < deadline:
+            if COUNTER in seen and (not do_write or seen.get(SETPOINT) == 42.5):
+                break
+            remaining = deadline - time.monotonic()
+            try:
+                msg = json.loads(await asyncio.wait_for(ws.recv(), remaining))
+            except asyncio.TimeoutError:
+                break
+            if msg.get("type") != "update":
+                continue
+            name = pv_name(msg.get("pv", ""))
+            seen[name] = msg.get("value")
+            print(f"  {name} = {msg.get('value')}")
 
-    if "WEISS:TEST:COUNTER" not in seen:
+    if COUNTER not in seen:
         print("FEHLER: kein Lesewert für WEISS:TEST:COUNTER", file=sys.stderr)
         return 1
-    if do_write and seen.get("WEISS:TEST:SETPOINT") != 42.5:
+    if do_write and seen.get(SETPOINT) != 42.5:
         print("FEHLER: Schreibwert 42.5 kam nicht zurück", file=sys.stderr)
         return 1
     print("OK: Lesen" + (" und Schreiben" if do_write else "") + " über die Brücke funktioniert")
