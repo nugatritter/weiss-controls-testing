@@ -52,6 +52,7 @@ services:
   weiss-softioc:
     build:
       context: ./softioc
+      dockerfile: Containerfile
     image: localhost/weiss-softioc:${WEISS_TAG:-latest}
     container_name: weiss-softioc
     restart: unless-stopped
