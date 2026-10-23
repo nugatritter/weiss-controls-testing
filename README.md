@@ -66,6 +66,10 @@ podman compose build
 podman compose up -d
 ```
 
+**Achtung:** Das Frontend-Image bekommt `VITE_DEMO_MODE` beim Bauen aus `DEMO_MODE` in der `.env`.
+Fehlt die Datei oder der Wert, baut Compose mit `false`, und die Demo-Buttons fehlen (siehe
+[Demo-Modus](#demo-modus-und-anmeldung)). Prüfe die `.env` vor dem Bauen.
+
 Aufruf: `http://localhost` (bzw. `http://<APP_HOSTNAME>`). Mit `podman compose down` stoppst du alles.
 
 ## Variante B: Dauerbetrieb als systemd-Dienst (rootless)
@@ -196,6 +200,23 @@ erreicht beide (`EPICS_CA_AUTO_ADDR_LIST=YES`). Für eine eindeutige Adressierun
 Test-IOC einen eigenen Port geben (`Environment=EPICS_CA_SERVER_PORT=5164` in der Unit) und
 `localhost:5164` in `EPICS_CA_ADDR_LIST` ergänzen.
 
+## API prüfen
+
+Die API hat keine Weboberfläche außer der Swagger-Doku unter `/docs` (FastAPI-Standard, im Code
+`backend/api/src/api/main.py`). Zwei Befehle prüfen, ob sie läuft und die Sitzungsprüfung arbeitet:
+
+```sh
+# Lebt die API? Erwartet: 200
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/docs
+
+# Sitzung ohne Cookie. Erwartet: 401 und {"detail":"Not authenticated"}
+curl -s -w "\n%{http_code}\n" http://localhost:8000/api/v1/auth/me
+```
+
+`000` bedeutet, dass auf Port 8000 nichts antwortet. Dann läuft der Container `weiss-api` nicht:
+`podman ps -a --filter name=weiss-api` und `podman logs weiss-api`. Der zweite Befehl ist der
+wichtigere Test, denn genau diesen Endpunkt nutzt später die Sitzungsprüfung (`auth_request`).
+
 ## Demo-Modus und Anmeldung
 
 `DEMO_MODE` wirkt an **zwei Stellen** und muss dort denselben Wert haben:
@@ -217,6 +238,21 @@ Daraus folgt:
 - Sowohl `compose.yaml` als auch `scripts/build-images.sh` übergeben `DEMO_MODE` und
   `AUTH_IDENTITY_PROVIDER` aus deiner Konfiguration ans Frontend-Build. Pflege sie daher nur in
   `.env` bzw. `~/.config/weiss/weiss.env`.
+
+**Symptom: Login-Seite zeigt nur „Organization account“.** Das Frontend wurde mit
+`VITE_DEMO_MODE` ungleich `true` gebaut. Die API läuft aber mit `DEMO_MODE=true`, deshalb würde
+der Organisations-Login mit 403 scheitern. Lösung: Frontend-Image mit den passenden Werten neu bauen.
+
+```sh
+podman rm -f weiss
+podman build --target prod \
+  --build-arg VITE_DEMO_MODE=true --build-arg VITE_AUTH_IDENTITY_PROVIDER=oauth \
+  -t localhost/weiss:latest https://github.com/weiss-controls/weiss.git#main
+podman run -d --name weiss -p 80:8081 --env-file ~/.config/weiss/weiss.env localhost/weiss:latest
+```
+
+Die Demo-Rollen sind danach „Demo Operator“ und „Demo Developer“. Der Developer-Login funktioniert
+ohne `TECHNICAL_ACCOUNT_TOKEN`, aber Commits und Git-Funktionen nicht.
 
 ### Von Demo auf echten Login (OAuth2/OIDC) umstellen
 
@@ -311,6 +347,8 @@ der direkten Ports.
 |---|---|
 | `bind: permission denied` auf Port 80 | Sysctl `ip_unprivileged_port_start` nicht gesetzt (siehe Voraussetzungen). |
 | Login oder API-Aufrufe schlagen im Browser mit CORS-Fehler fehl | Seite wird nicht über `http://<APP_HOSTNAME>` auf Port 80 aufgerufen oder `APP_HOSTNAME` passt nicht zur URL. |
+| Login-Seite zeigt nur „Organization account“ | Frontend mit `VITE_DEMO_MODE` ≠ `true` gebaut. Neu bauen, siehe [Demo-Modus](#demo-modus-und-anmeldung). |
+| `curl` auf Port 8000 liefert `000` | Container `weiss-api` läuft nicht. `podman logs weiss-api`. |
 | Login: „Only demo provider…“ / „Demo mode is not enabled“ (403) | `DEMO_MODE` in Frontend-Build und API stimmen nicht überein. Rebuild und Neustart. |
 | PVs bleiben leer | `podman logs weiss-epicsws`. IOC mit `caget` auf dem Host testen, `EPICS_CA_ADDR_LIST` prüfen, Firewall (UDP/TCP 5064). |
 | WebSocket verbindet nicht (HTTP) | Port 8080 vom Browser aus nicht erreichbar (Firewall) oder `weiss-epicsws` läuft nicht. |
