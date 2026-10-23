@@ -1,0 +1,95 @@
+Lauflog der Prüfskripte unter tests/ (Wiederholung vom 2026-10-23, 13:21 UTC)
+======================================================================
+Umgebung (Sandbox, NICHT das Podman-Deployment):
+  - WEISS-Code: Commit 850afe2b91071db5eddcc978c6a35bb18b5acb47 (PV-Brücke und API, unverändert bis auf unten genannte Abweichung)
+  - IOC: EPICS Base R7.0.9, nativ gebaut, softIoc mit softioc/test.db und softioc/st.cmd dieses Repos
+  - Python 3.13.16, websockets 17.3, httpx 0.28.1
+  - Abweichung: Der PVA-Client (p4p) der Brücke ist durch eine Attrappe ersetzt, weil die Sandbox kein IPv6 bietet.
+    Channel Access, Brücke, Snapshot- und Restore-Pfade laufen unverändert.
+  - API im Demo-Modus (DEMO_MODE=true), Speicher /app/storage in der Sandbox.
+  - Der Lauf stammt vom Autor der Ausgangsfassung und ist keine unabhängige Wiederholung.
+======================================================================
+
+### bridge_checks.py, Brücke mit EPICS_DEFAULT_PROTOCOL=ca
+[BESTÄTIGT] Die Brücke nimmt eine anonyme WebSocket-Verbindung an (HTTP 101).
+    Status: 101
+[BESTÄTIGT] Die Brücke nimmt eine Verbindung mit fremder Origin an (HTTP 101).
+    Origin https://evil.example, Status: 101
+[BESTÄTIGT] Client B schreibt eine PV, die nur Client A abonniert hat (Kanäle sind global).
+    SETPOINT 10.0 -> 11.5
+[BESTÄTIGT] Der Snapshot enthält auch reine Anzeige-PVs, jeweils mit Alarm und Zeitstempel.
+    8 PVs im Snapshot: ['COUNTER', 'MESSAGE', 'READBACK', 'SETPOINT', 'SINE', 'STATUS', 'SWITCH', 'WAVE']
+[BESTÄTIGT] Array-Werte stehen im Snapshot nur als b64arr, value ist leer.
+    WAVE: value=None, b64arr vorhanden=True
+[BESTÄTIGT] Der Restore meldet auch für eine nicht vorhandene PV und für ein Array Erfolg.
+    9 von 9 als erfolgreich gemeldet
+[BESTÄTIGT] Der Restore schreibt auch eine reine Anzeige-PV (COUNTER) zurück.
+    COUNTER vorher ca. 23.0, im Restore 63, danach gesehen: 63.0
+
+Zusammenfassung: 7 von 7 Aussagen bestätigt.
+(Exit-Code 0)
+
+### bridge_message_size.py, Brücke mit EPICS_DEFAULT_PROTOCOL=ca
+Erste Nachricht je PV (mit Metadaten): {'WEISS:TEST:COUNTER': 621, 'WEISS:TEST:SINE': 631}
+Folge-Updates: 59, JSON-Nutzlast in Byte: min 184, Median 184, max 199
+[BESTÄTIGT] Ein Skalar-Update (Folge-Update) belegt rund 200 Byte einschließlich WebSocket-Kopf (150 bis 250).
+    Median 184 Byte Nutzlast + 4 Byte Kopf (PV-Name mit 18 Zeichen; längere Namen vergrößern die Nachricht)
+
+Zusammenfassung: 1 von 1 Aussagen bestätigt.
+(Exit-Code 0)
+
+### bridge_default_protocol.py, Brücke mit EPICS_DEFAULT_PROTOCOL=ca
+[NICHT BESTÄTIGT] Mit ausdrücklich abonnierten ca://-PVs fehlen PVs im Snapshot (Standardprotokoll der Brücke nicht 'ca').
+    abonniert: 3, im Snapshot: 3 ['COUNTER', 'SETPOINT', 'SWITCH']
+
+Zusammenfassung: 0 von 1 Aussagen bestätigt.
+(Exit-Code 0)
+
+### bridge_default_protocol.py, Brücke mit EPICS_DEFAULT_PROTOCOL=pva
+[BESTÄTIGT] Mit ausdrücklich abonnierten ca://-PVs fehlen PVs im Snapshot (Standardprotokoll der Brücke nicht 'ca').
+    abonniert: 3, im Snapshot: 0 []
+
+Zusammenfassung: 1 von 1 Aussagen bestätigt.
+(Exit-Code 0)
+
+### bridge_checks.py, Brücke mit EPICS_DEFAULT_PROTOCOL=pva
+[BESTÄTIGT] Die Brücke nimmt eine anonyme WebSocket-Verbindung an (HTTP 101).
+    Status: 101
+[BESTÄTIGT] Die Brücke nimmt eine Verbindung mit fremder Origin an (HTTP 101).
+    Origin https://evil.example, Status: 101
+[BESTÄTIGT] Client B schreibt eine PV, die nur Client A abonniert hat (Kanäle sind global).
+    SETPOINT 10.0 -> 11.5
+    Hinweis: Der Snapshot ist leer. Das passiert, wenn EPICS_DEFAULT_PROTOCOL der Brücke nicht 'ca' ist
+    (siehe bridge_default_protocol.py). Die Prüfungen 4 bis 6 verwenden dann die zuletzt gesehenen Werte.
+[BESTÄTIGT] Der Restore meldet auch für eine nicht vorhandene PV und für ein Array Erfolg.
+    9 von 9 als erfolgreich gemeldet
+[BESTÄTIGT] Der Restore schreibt auch eine reine Anzeige-PV (COUNTER) zurück.
+    COUNTER vorher ca. 52.0, im Restore 92, danach gesehen: 92.0
+
+Zusammenfassung: 5 von 5 Aussagen bestätigt.
+(Exit-Code 0)
+
+### api_snapshot_checks.py, API im Demo-Modus
+[BESTÄTIGT] Anonyme Anfragen an die Snapshot-API werden abgewiesen (401).
+[BESTÄTIGT] Ein Demo-Operator darf Snapshots speichern (keine Rollenprüfung).
+    Status 200
+[BESTÄTIGT] Zwei Speicherungen in derselben Sekunde überschreiben sich (ID mit Sekundenauflösung).
+    gleiche ID: True, Namen in der Liste: ['zweiter', 'operator-snapshot']
+[BESTÄTIGT] Der gespeicherte Snapshot enthält keinen Benutzer.
+    Felder: ['id', 'name', 'opi_file', 'pv_count', 'pvs', 'timestamp']
+[BESTÄTIGT] Ein anderer Benutzer (Developer) sieht und löscht Snapshots des Operators.
+    sichtbar: ['zweiter', 'operator-snapshot'], Löschen: Status 200
+[BESTÄTIGT] Die OPI-Pfade a/b.opi.json und a_b.opi.json teilen sich einen Snapshot-Ordner.
+    Liste für a_b.opi.json: ['für a/b']
+
+Zusammenfassung: 6 von 6 Aussagen bestätigt.
+(Exit-Code 0)
+
+======================================================================
+Hinweise zum Lauf:
+  - Die API legt je OPI-Pfad einen Ordner unter /app/storage/snapshots an und entfernt ihn nicht. Nach dem Lauf blieben zwei
+    leere Ordner (tests_api-check_a_b.opi.json, tests_api-check_demo.opi.json), aber keine Snapshot-Dateien.
+  - bridge_checks.py mit Standardprotokoll pva meldet nur 5 statt 7 Aussagen: Der Snapshot ist dort leer, deshalb entfallen die
+    beiden Aussagen zum Snapshot-Inhalt (siehe bridge_default_protocol.py).
+  - Alle Aussagen mit [BESTÄTIGT] beschreiben Schwächen des geprüften Standes. Nach Korrekturen im Upstream sind
+    [NICHT BESTÄTIGT]-Ergebnisse zu erwarten.
