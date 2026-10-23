@@ -8,8 +8,9 @@ in rootless Podman-Containern, später als systemd-Dienst unter Ubuntu. Die Anle
 Dieses Repo enthält nur die Podman-Konfiguration. Der Upstream-Code wird beim Bauen direkt aus Git
 geladen. Upstream-Doku: <https://docs.weiss-controls.org/>
 
-> Hinweis: Die Dateien wurden ohne Podman-Testlauf erstellt. Prüfe den ersten Start mit den
-> Kontrollschritten unten.
+> Teststand: Die drei Images bauen, die Test-SoftIOC läuft, und `weiss-epicsws` liest und schreibt
+> PVs über den WebSocket (Prüfung mit `scripts/check-ws.py`, siehe unten). Noch nicht geprüft:
+> Frontend im Browser, HTTPS und der systemd-Dienst über Quadlet.
 
 ## Inhalt
 
@@ -118,6 +119,11 @@ kämen CA-Broadcasts im rootless Bridge-Modus nicht durch.
 
 Rootless ändert an diesen Variablen nichts. Entscheidend ist nur das Host-Netzwerk.
 
+**Wichtig beim Start:** Ohne `--env-file` nimmt der Container die Upstream-Standards, also
+`EPICS_DEFAULT_PROTOCOL=pva`. Die Brücke liefert dann CA-Werte mit Präfix (`ca://WEISS:TEST:COUNTER`).
+Starte deshalb immer mit `--env-file ~/.config/weiss/weiss.env` (siehe Variante B).
+
+
 **Test mit einem vorhandenen IOC auf dem Host:** `caget MY:PV` muss dort funktionieren. Im
 WEISS-Editor ein Widget mit dem PV-Namen `MY:PV` (oder `ca://MY:PV`) anlegen und in den
 Runtime-Modus wechseln. Logs: `podman logs weiss-epicsws`.
@@ -127,7 +133,8 @@ Runtime-Modus wechseln. Logs: `podman logs weiss-epicsws`.
 `softioc/` enthält eine SoftIOC aus **EPICS Base 7.0.9** (CA und PVA), die du ohne eigenen IOC
 zum Testen nutzen kannst. Sie läuft wie `weiss-epicsws` im Host-Netzwerk, damit beide sich über
 `localhost` finden. Das Image wird beim ersten Mal aus dem Quellcode gebaut und braucht dafür einige
-Minuten. Ein anderer Stand lässt sich mit `--build-arg EPICS_BASE_REF=<tag>` wählen.
+Minuten. Eine andere EPICS-Base-Version setzt du mit dem `ARG EPICS_BASE_REF` in
+`softioc/Containerfile`.
 
 | PV | Typ | Beschreibung |
 |---|---|---|
@@ -168,6 +175,21 @@ podman exec weiss-epicsws python -c "import epics; print(epics.caget('WEISS:TEST
 
 Im WEISS-Editor Widgets mit diesen PV-Namen anlegen und in den Runtime-Modus wechseln, dann
 siehst du die Werte und kannst `SETPOINT`, `SWITCH` und `MESSAGE` schreiben.
+
+### PV-Brücke über den WebSocket prüfen
+
+`scripts/check-ws.py` verbindet sich mit `weiss-epicsws` auf Port 8080, wie es der Browser tut,
+und liest `WEISS:TEST:COUNTER`. Mit `--write` schreibt es außerdem `WEISS:TEST:SETPOINT = 42.5`
+und wartet, bis der Wert über das Abo zurückkommt. Es braucht keine Anmeldung.
+
+```sh
+python3 -m venv ~/weiss-check && ~/weiss-check/bin/pip install websockets
+~/weiss-check/bin/python scripts/check-ws.py ws://localhost:8080
+~/weiss-check/bin/python scripts/check-ws.py ws://localhost:8080 --write
+```
+
+Erwartet wird jeweils `OK: …` und Exit-Code 0. Die Werte kommen mit Präfix (`ca://`) oder ohne an;
+das Skript akzeptiert beides.
 
 Läuft zusätzlich ein IOC auf dem Host, teilen sich beide UDP-Port 5064. Die Suche per Broadcast
 erreicht beide (`EPICS_CA_AUTO_ADDR_LIST=YES`). Für eine eindeutige Adressierung kannst du der
