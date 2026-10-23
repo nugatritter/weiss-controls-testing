@@ -1,0 +1,653 @@
+= WEISS Controls und Phoebus im Vergleich
+:doctype: article
+:lang: de
+:revdate: 23. Oktober 2026
+:toc: left
+:toc-title: Inhalt
+:toclevels: 2
+:sectnums:
+:icons: font
+:table-caption: Tabelle
+:weiss: https://github.com/weiss-controls/weiss/blob/850afe2b91071db5eddcc978c6a35bb18b5acb47/
+:phoebus: https://github.com/ControlSystemStudio/phoebus/blob/f041c41975c0062c4ae06f28d3545bdf6231e16b/
+
+[abstract]
+WEISS und Phoebus bedienen dasselbe Umfeld, EPICS-Leitsysteme, aber auf grundverschiedene Weise.
+Dieses Dokument stellt beide Projekte anhand ihres Quellcodes und ihrer Dokumentation gegenüber
+und bezieht die Befunde aus dem Testbetrieb von WEISS unter rootless Podman ein.
+
+== Zusammenfassung
+
+Phoebus ist eine Java-Desktop-Anwendung mit einem großen Werkzeugkasten und optionalen
+Server-Diensten. WEISS ist eine Web-Anwendung, die den Display-Builder-Teil im Browser abbildet
+und um Git-Versionierung und eine Freigabe-Funktion ergänzt. Sie ersetzen einander nicht, sie
+ergänzen sich.
+
+[cols="4,1"]
+|===
+| Aussage | Beleg
+
+| WEISS deckt nur einen Teil von Phoebus ab: Anzeigen erstellen und bedienen. 22 Widgets stehen 46
+Widget-Typen gegenüber. Alarmserver, Archiv-Anbindung, Logbuch, Scan, Skripte und lokale
+oder simulierte PVs fehlen. | <<tab-widgets>>, <<tab-umfeld>>
+
+| WEISS bietet, was Phoebus nicht mitbringt: Zugriff per Browser ohne Installation, eine
+integrierte Git-Versionierung mit Freigabe-Workflow und eine Anmeldung über OAuth2/OIDC. |
+<<tab-grundlagen>>, <<tab-versionierung>>
+
+| Der PV-Zugriff in WEISS ist nicht abgesichert. Die PV-Brücke prüft weder Anmeldung noch Rolle
+noch Origin, und der IOC sieht alle WEISS-Nutzer als einen einzigen Client. Das ist im Live-Test
+bestätigt. | <<tab-sicherheit>>, <<tab-praxis>>
+
+| WEISS hat im Repository keine automatisierten Tests. Phoebus hat 457 Test-Dateien. |
+<<tab-reife>>
+
+| Eine Phoebus-Anzeige lässt sich importieren, aber nur teilweise: Die Doku nennt 20 von 45
+Widget-Typen als unterstützt, Regeln und Skripte werden nicht übernommen. | <<tab-import>>
+|===
+
+== Prüfbasis und Methode
+
+.Geprüfte Stände
+[cols="1,3,3"]
+|===
+| | WEISS | Phoebus
+
+| Repository | https://github.com/weiss-controls/weiss | https://github.com/ControlSystemStudio/phoebus
+| Geprüfter Commit | `850afe2` (main, 19. Oktober 2026) | `f041c41` (master, 22. Oktober 2026)
+| Versionsstand | Tags bis `2.0.1`, `package.json` nennt `2.0.0` | `7.0.0-SNAPSHOT`, letztes Tag `v6.0.0`
+|===
+
+Vorgehen:
+
+* Beide Repositories wurden geklont und im Quellcode sowie in der mitgelieferten Dokumentation
+geprüft. Alle Links in diesem Dokument zeigen auf diese Commits.
+* Zahlen stammen aus `wc -l`, `find` und `grep` über die Commits und zählen Kommentare und Leerzeilen
+mit. Sie zeigen Größenordnungen, keine Qualität.
+* **WEISS** wurde zusätzlich praktisch geprüft: Container-Build unter Podman, Betrieb von API,
+PV-Brücke und Frontend, Lese- und Schreibzugriff über den WebSocket gegen eine Test-IOC mit
+EPICS Base 7.0.9.
+* **Phoebus** wurde nicht gebaut und nicht gestartet. Aussagen zu Phoebus beruhen auf Quellcode und
+Dokumentation, nicht auf Praxisbetrieb.
+* Die Webseite `docs.weiss-controls.org` war aus der Prüfumgebung nicht erreichbar. Als Ersatz
+diente der Ordner `docs/` im Repository, aus dem die Seite gebaut wird.
+
+== Vergleich im Detail
+
+Die Spalte „Belege“ verweist auf das Quellenverzeichnis am Ende.
+
+[[tab-grundlagen]]
+=== Grundlagen
+
+[cols="2,5,5,1", options="header"]
+|===
+| Kriterium | WEISS | Phoebus | Belege
+
+| Zweck
+| „No-code“-System für webbasierte EPICS-Bedienoberflächen mit Editor, Live-PV-Kommunikation
+(Lesen und Schreiben), Git-Versionierung und einfacher Freigabe.
+| Framework und Sammlung von Werkzeugen zur Überwachung und Bedienung großer Leitsysteme.
+Nachfolger von CS-Studio ohne Eclipse RCP und SWT.
+| <<w1,W1>>, <<p1,P1>>
+
+| Lizenz
+| GPL-3.0-or-later
+| Eclipse Public License 1.0
+| <<w1,W1>>, <<p1,P1>>
+
+| Technik Client
+| Browser-App mit React 19, TypeScript, Vite, Material UI, ECharts und zustand.
+| Java-Desktop-Anwendung mit JavaFX. JDK 25 oder neuer, Build mit Maven oder Ant.
+| <<w3,W3>>, <<p1,P1>>
+
+| Technik Server
+| FastAPI (Python) für Anmeldung, Git und Snapshots, ein eigener WebSocket-Dienst in Python
+(PV-Brücke mit p4p für PVA und PyEpics für CA), nginx als Webserver und Proxy.
+| Für die Anzeige kein zentraler Server nötig. Optionale Dienste: Alarmserver, Alarm-Logger,
+Archive Engine, Save-and-Restore, Scan-Server.
+| <<w3,W3>>, <<w5,W5>>, <<p2,P2>>, <<p7,P7>>
+
+| Anzeigeformat
+| `.opi.json` (JSON). Import von Phoebus-`.bob`-Dateien.
+| `.bob` (XML). Liest laut Readme die meisten BOY-`.opi`-Dateien. Konverter für EDM und MEDM
+liegen im Repository.
+| <<w2,W2>>, <<w9,W9>>, <<p9,P9>>
+
+| Versionsstand
+| Tags `1.2.0` bis `2.0.1`. Copyright-Vermerk 2026.
+| `7.0.0-SNAPSHOT` auf master, letztes Tag `v6.0.0`. Copyright seit 2017 (Doku) bzw. 2018 (Lizenzdatei).
+| <<w1,W1>>, <<w3,W3>>, <<p1,P1>>, <<p10,P10>>
+
+| Code-Umfang
+| Rund 24.100 Zeilen TypeScript/TSX (ohne generierten API-Client) und rund 3.450 Zeilen Python
+(API 2.316, PV-Brücke 1.137).
+| Rund 377.000 Zeilen Java im Produktivcode. Davon Display Builder rund 106.500, Kern rund 78.200,
+übrige Anwendungen rund 159.400, Dienste rund 32.800.
+| <<w3,W3>>, <<p2,P2>>
+|===
+
+[[tab-betrieb]]
+=== Betrieb und Architektur
+
+[cols="2,5,5,1", options="header"]
+|===
+| Kriterium | WEISS | Phoebus | Belege
+
+| Zugang für Bediener
+| Browser, keine Installation. Fenster kleiner als 768 × 600 Pixel werden gesperrt.
+| Installation auf jedem Arbeitsplatz-Rechner mit passendem JDK.
+| <<w11,W11>>, <<p1,P1>>
+
+| Rechenlast
+| Darstellung im Browser („client-side rendering“). Der Server vermittelt PVs und speichert Dateien.
+| PV-Verbindungen und Darstellung im lokalen Client. Die Runtime verarbeitet PV-Updates und Skripte
+in Hintergrund-Threads.
+| <<w2,W2>>, <<p9,P9>>
+
+| Bereitstellung
+| Compose-Dateien für Docker und Podman. Die CI baut beide Varianten.
+| Build per Maven oder Ant, Produkt-Archiv. Ein Dockerfile steht für eine Build-Umgebung der Entwickler zur Verfügung.
+| <<w10,W10>>, <<p1,P1>>, <<p10,P10>>
+
+| Netzbetrieb
+| HTTP: Der Browser verbindet direkt mit der API (Port 8000) und der PV-Brücke (Port 8080).
+HTTPS: Alles läuft über nginx (`/api/`, `/ws/`). Die PV-Brücke braucht das Host-Netzwerk für
+CA-Broadcast.
+| EPICS-Verbindungen kommen direkt vom Arbeitsplatz-Rechner. Die zentralen Dienste sind optional.
+| <<w5,W5>>, <<w11,W11>>, <<w13,W13>>, <<p2,P2>>
+
+| Persistenz
+| Repos, Benutzer-Worktrees und Snapshots im Server-Speicher (`/app/storage`). Sitzungen nur im
+Arbeitsspeicher.
+| Dateien im Dateisystem oder per HTTP. Einstellungen in lokalen Preferences.
+| <<w6,W6>>, <<w7,W7>>, <<p9,P9>>
+|===
+
+[[tab-widgets]]
+=== Anzeigen und Editor
+
+[cols="2,5,5,1", options="header"]
+|===
+| Kriterium | WEISS | Phoebus | Belege
+
+| Editor
+| Drag-and-drop im Browser mit Raster, Ausrichtung, Gruppierung, Ebenen, Tastenkürzeln und
+Undo/Redo.
+| JavaFX-Editor mit Widget-Klassen, Eigenschaften, Regeln, Skripten, Makros und Vorlagen.
+| <<w2,W2>>, <<w4,W4>>, <<p4,P4>>
+
+| Anzahl Widgets
+| 22, dazu Gruppieren als Editorfunktion.
+| 46 Typen (Zählung der `WidgetDescriptor`-Kennungen im Produktivcode).
+| <<w4,W4>>, <<p3,P3>>
+
+| Kategorien
+| Basic 4, Controls 7, Monitoring 6, Plots 3, Layout 2.
+| Graphics, Monitors, Controls, Plots, Structure, Miscellaneous.
+| <<w4,W4>>, <<p4,P4>>
+
+| Messanzeigen
+| Fortschrittsbalken, Bit- und Mehrbit-Anzeigen, Mehrzustands-LED. Tank, Thermometer, Meter und
+Linear-Meter fehlen.
+| Zusätzlich `meter`, `linearmeter`, `tank` und `thermometer`.
+| <<w4,W4>>, <<w9,W9>>, <<p3,P3>>
+
+| Eingabe
+| Eingabefeld, Auswahlbox, Spinner, Schieberegler, Umschalter.
+| Zusätzlich Checkbox, Choice, Radio, Slide-Button, Thumbwheel, Scrollbar, Dateiauswahl.
+| <<w4,W4>>, <<p3,P3>>
+
+| Grafik
+| Rechteck, Ellipse, Text, Bild.
+| Zusätzlich Arc, Polygon, Polyline, Symbol.
+| <<w4,W4>>, <<p3,P3>>
+
+| Plots
+| GraphXY, GraphY (Stripchart-Pendant), Histogramm, AreaDetector für Bild-Arrays.
+| `xyplot`, `stripchart`, `waterfallplotwidget`, `databrowser`, `image`.
+| <<w4,W4>>, <<p3,P3>>
+
+| Struktur
+| EmbeddedDisplay, NavigationTabs, NavigationButton, Gruppierung.
+| `embedded`, `tabs`, `navtabs`, `group`, `template` (Vorlagen).
+| <<w4,W4>>, <<p3,P3>>
+
+| Tabellen, Arrays, 3D, Webseite
+| Nicht vorhanden.
+| `table`, `array`, `3dviewer`, `webbrowser`.
+| <<w9,W9>>, <<p3,P3>>
+
+| Aktionen
+| PV schreiben (ActionButton) und Display öffnen (NavigationButton). Weitere Aktionstypen habe
+ich nicht gefunden.
+| Acht Aktionen: Display öffnen und schließen, PV schreiben, Skript ausführen, Befehl ausführen,
+Datei öffnen, Webseite öffnen, Data Browser öffnen.
+| <<w9,W9>>, <<p8,P8>>
+|===
+
+[[tab-pv]]
+=== PV-Anbindung
+
+[cols="2,5,5,1", options="header"]
+|===
+| Kriterium | WEISS | Phoebus | Belege
+
+| Protokolle
+| Channel Access (PyEpics) und PV Access (p4p). Präfix `ca://` oder `pva://`. Das Standardprotokoll
+setzt `EPICS_DEFAULT_PROTOCOL` (Upstream-Vorgabe `pva`).
+| CA, PVA, MQTT, Tango, Jackie und OPVA (Module `pv-ca`, `pv-pva`, `pv-mqtt`, `pv-tango`,
+`pv-jackie`, `pv-opva`). Jackie und OPVA habe ich nicht näher geprüft.
+| <<w5,W5>>, <<w8,W8>>, <<p5,P5>>
+
+| Lokale und simulierte PVs
+| Im Code nicht gefunden (kein `loc://`, `sim://`, `sys://`, keine Formeln).
+| `loc`, `sim`, `sys` und `formula` im PV-Kern.
+| <<w5,W5>>, <<p5,P5>>
+
+| Zugriffsrechte der PVs
+| Im Code der PV-Brücke und des PV-Speichers nicht gefunden.
+| Der PV-Kern kennt Zugriffsrechte (`AccessRightsEventHandler`). Widgets berücksichtigen
+Schreibschutz, etwa der Action Button.
+| <<w5,W5>>, <<p5,P5>>
+
+| Drosselung
+| `EPICS_MAX_UPDATE_RATE_HZ` (Standard 30 je PV) und eine Warteschlange je Client
+(`EPICS_MAX_CLIENT_QUEUE`). Zu langsame Clients werden getrennt.
+| Nicht verglichen.
+| <<w8,W8>>
+|===
+
+[[tab-dynamik]]
+=== Dynamik und Logik
+
+[cols="2,5,5,1", options="header"]
+|===
+| Kriterium | WEISS | Phoebus | Belege
+
+| Regeln
+| Regeln-Dialog: Bedingungen setzen Eigenschaftswerte, mit Makro-Überschreibungen.
+| Regeln: boolesche Ausdrücke oder PV-Werte ändern Eigenschaften.
+| <<w14,W14>>, <<p4,P4>>
+
+| Skripte
+| Nicht vorhanden.
+| Python und JavaScript. Die Doku nennt Python 2.7 und JavaScript 1.7 und rät, Skripte nur
+einzusetzen, wenn Regeln und Formeln nicht reichen.
+| <<p4,P4>>
+
+| Makros
+| Vorhanden.
+| Vorhanden (`$(name)` und `${name}`).
+| <<w4,W4>>, <<p4,P4>>
+
+| Formeln
+| Nicht gefunden.
+| Formel-PVs (`core-formula`).
+| <<p5,P5>>
+
+| Beim Import
+| Regeln und Skripte werden nicht übernommen und müssen von Hand ergänzt werden.
+| Nicht zutreffend.
+| <<w9,W9>>
+|===
+
+[[tab-versionierung]]
+=== Versionierung und Freigabe
+
+[cols="2,5,5,1", options="header"]
+|===
+| Kriterium | WEISS | Phoebus | Belege
+
+| Versionierung
+| Integriert: Repos importieren (nur HTTPS-Adressen), Bare-Clone, ein Worktree je Benutzer,
+Auto-Save in den Worktree, Commit mit Push nach `origin`. Commit-Autor ist der angemeldete
+Benutzer.
+| Im Display Builder und im Kern habe ich keine Git-Anbindung gefunden. Dateien werden extern
+verwaltet.
+| <<w7,W7>>, <<w8,W8>>, <<p2,P2>>
+
+| Freigabe
+| Bestimmte Commits werden freigegeben. Operatoren sehen nur den freigegebenen Stand.
+| Keine Freigabe-Funktion gefunden.
+| <<w2,W2>>, <<w7,W7>>
+
+| Paralleles Arbeiten
+| Isolierte Worktrees je Entwickler.
+| Dateibasiert, Abstimmung außerhalb des Werkzeugs.
+| <<w7,W7>>
+
+| Rollen
+| Operator und Developer (`roles.toml`).
+| Keine Rollen im Display Builder. Autorisierung per Konfigurationsdatei.
+| <<w8,W8>>, <<p6,P6>>
+|===
+
+[[tab-sicherheit]]
+=== Anmeldung und Sicherheit
+
+[cols="2,5,5,1", options="header"]
+|===
+| Kriterium | WEISS | Phoebus | Belege
+
+| Anmeldung
+| OAuth2/OIDC über einen Identity Provider (zum Beispiel Keycloak oder Entra ID). Der Demo-Modus
+kennt keine echte Anmeldung.
+| Das Betriebssystem authentifiziert. Phoebus verlässt sich auf den angemeldeten Benutzer.
+| <<w6,W6>>, <<w8,W8>>, <<p6,P6>>
+
+| Autorisierung
+| Rollen Developer und Operator über `roles.toml`. Sie gelten für die API.
+| `authorization.conf`: Rechte für das Sperren der Oberfläche und für Alarm-Funktionen, vergeben
+über reguläre Ausdrücke auf Benutzernamen.
+| <<w6,W6>>, <<p6,P6>>
+
+| Schutz des PV-Zugriffs
+| Die PV-Brücke prüft weder Anmeldung noch Rolle noch Origin. Das ist im Live-Test bestätigt.
+Schutz entsteht nur durch vorgeschaltete Maßnahmen (Proxy, Firewall).
+| EPICS-Verbindungen kommen direkt vom Arbeitsplatz. Es gibt keine zwischengeschaltete Brücke.
+Welche Benutzeridentität der IOC dabei sieht, habe ich nicht geprüft.
+| <<w5,W5>>, <<w13,W13>>, <<p2,P2>>
+
+| Identität am IOC
+| Bei CA erscheinen alle WEISS-Nutzer als ein Client: der Prozessbenutzer der PV-Brücke (im
+Container `root`). EPICS-Zugriffsregeln können einzelne WEISS-Nutzer dann nicht unterscheiden.
+Für PVA habe ich das nicht geprüft.
+| Nicht geprüft.
+| <<w5,W5>>, <<w15,W15>>
+
+| Sitzung
+| Cookie `weiss_session`, 24 Stunden, nur im Arbeitsspeicher. Logout und Sitzungsende beenden
+offene PV-Verbindungen nicht.
+| Keine Web-Sitzung.
+| <<w6,W6>>, <<w5,W5>>
+
+| Transport
+| HTTPS über nginx möglich. Im HTTP-Betrieb ist alles unverschlüsselt.
+| Nicht geprüft.
+| <<w13,W13>>
+|===
+
+[[tab-umfeld]]
+=== Umfeld-Werkzeuge
+
+[cols="2,5,5,1", options="header"]
+|===
+| Kriterium | WEISS | Phoebus | Belege
+
+| Alarmsystem
+| Alarmrand an Widgets und ein Alarm-Panel, das die Alarme der geladenen PVs zusammenfasst.
+Kein Alarmserver.
+| Alarmserver (Kafka), Alarm-Oberfläche, Alarm-Logger, Konfigurations-Logger.
+| <<w16,W16>>, <<p2,P2>>, <<p7,P7>>
+
+| Archiv und Historie
+| Verlaufspuffer im Browser für Plots. Keine Archiv-Anbindung.
+| Data Browser mit Archiv-Readern, Archive Engine als Dienst.
+| <<w17,W17>>, <<p2,P2>>, <<p7,P7>>
+
+| Zustände sichern und laden
+| Snapshot-Dialog, Ablage über die API, Wiederherstellen über die PV-Brücke.
+| Save-and-Restore als Anwendung und Dienst.
+| <<w5,W5>>, <<w18,W18>>, <<p7,P7>>
+
+| Logbuch
+| Nicht vorhanden.
+| Logbuch-Anwendung (Olog und weitere).
+| <<p2,P2>>, <<p7,P7>>
+
+| Scan
+| Nicht vorhanden.
+| Scan-Anwendung und Scan-Server.
+| <<p2,P2>>, <<p7,P7>>
+
+| PV-Werkzeuge
+| PV-Name im Kontextmenü kopieren.
+| Probe, PV-Tabelle, PV-Baum.
+| <<p2,P2>>
+|===
+
+[[tab-reife]]
+=== Reife und Qualitätssicherung
+
+[cols="2,5,5,1", options="header"]
+|===
+| Kriterium | WEISS | Phoebus | Belege
+
+| Automatisierte Tests
+| Keine Testdateien und kein Test-Skript in `package.json`.
+| 457 Java-Dateien unter `src/test`, davon 92 im Display Builder.
+| <<w3,W3>>, <<p2,P2>>
+
+| Kontinuierliche Prüfung
+| Format, Lint, Typprüfung und Container-Builds (Docker und Podman).
+| GitHub Actions (Badge im Readme). Inhalt der Workflows nicht verglichen.
+| <<w10,W10>>, <<p1,P1>>
+
+| Dokumentation
+| 13 Markdown-Seiten in `docs/src`: Einstieg, Tutorial, Import, Betrieb, Entwicklung.
+| Umfangreiche Sphinx-Dokumentation, Verweis auf ReadTheDocs im Readme.
+| <<w2,W2>>, <<p1,P1>>
+
+| Verwandtschaft
+| Die Doku nennt Phoebus ausdrücklich als Referenz.
+| Nicht zutreffend.
+| <<w2,W2>>
+|===
+
+[[tab-praxis]]
+== Praxisbefunde aus dem Testbetrieb von WEISS
+
+Diese Befunde entstanden beim Betrieb von WEISS unter rootless Podman. Sie ergänzen den Vergleich
+um Dinge, die aus Quellcode und Doku allein nicht sichtbar sind.
+
+[cols="1,5,5,2", options="header"]
+|===
+| Nr. | Befund | Folge | Nachweis
+
+| 1
+| Die PV-Brücke nimmt WebSocket-Verbindungen ohne Cookie, Token oder Origin-Prüfung an. Lesen,
+Schreiben und Wiederherstellen funktionieren anonym. Eine fremde Origin (`+https://evil.example+`)
+wurde mit `101 Switching Protocols` angenommen.
+| Wer Port 8080 (HTTP) oder `/ws/` (HTTPS) erreicht, kann PVs lesen und schreiben, auch ohne Login.
+| Live-Test, `epicsWS.py`
+
+| 2
+| Ein Schreibauftrag verlangt nur, dass für den PV-Namen schon ein Kanal existiert. Der Kanal ist
+global, nicht je Verbindung. `restore_result` meldet Erfolg auch bei übersprungenem Schreiben.
+| Ein Client schrieb eine PV, die ein anderer Client geöffnet hatte. Prüfungen müssen am IOC
+erfolgen, nicht an der Antwort der Brücke.
+| Live-Test, `CAClient.py`
+
+| 3
+| Die Brücke sendet standardmäßig alle 20 Sekunden einen Ping. Das setzt den 60-Sekunden-Timeout
+von nginx zurück.
+| Offene Verbindungen enden nie von selbst, auch nicht bei Logout oder Sitzungsablauf.
+| Code, nginx-Doku
+
+| 4
+| Sitzungen liegen nur im Arbeitsspeicher der API (24 Stunden).
+| Ein Neustart der API meldet alle Nutzer ab.
+| `+auth/__init__.py+`
+
+| 5
+| Die API erlaubt per CORS nur die Origin `+http://APP_HOSTNAME+` ohne Port.
+| Die App muss auf Port 80 laufen (HTTPS auf 443). Rootless braucht dafür
+`net.ipv4.ip_unprivileged_port_start`.
+| `config.py`, Test
+
+| 6
+| Der Demo-Modus wirkt an zwei Stellen: `VITE_DEMO_MODE` wird beim Bauen des Frontends fest
+eingebacken, `DEMO_MODE` gilt beim Start der API.
+| Bei abweichenden Werten zeigt die Login-Seite nur „Organization account“, und der Login scheitert
+mit 403. Compose baut ohne `.env` mit Standard `false`.
+| `Login.tsx`, Test
+
+| 7
+| Änderungen werden nur gespeichert, wenn der Benutzer Developer ist, im Editor-Modus arbeitet, die
+Datei auf `.opi.json` endet und einem Repo zugeordnet ist. Der Schreibvorgang läuft 500 ms
+nach der letzten Änderung.
+| Ein Reload davor oder ein fehlgeschlagener Schreibvorgang verwirft Inhalte. Gespeichert wird im
+Server-Speicher, nicht im Browser.
+| `useUIManager.ts`
+
+| 8
+| Repos und Worktrees liegen in `/app/storage`. Ohne Volume gehen sie mit dem Container verloren.
+| Das Volume muss beim Start des API-Containers eingebunden sein.
+| `common.py`, Test
+
+| 9
+| Der Import eines Repos verlangt eine `+https://+`-Adresse. Jeder Commit pusht nach `origin`.
+| GitHub ist nicht Pflicht, aber ein HTTPS-Git-Server. Ohne erreichbaren Remote ist Speichern per
+Commit nicht möglich.
+| `staging.py`
+
+| 10
+| Der `.bob`-Import ist streng. Zeichen nach `</display>` (hier ein `%` der Shell) führen zu
+„Expected root element <display>, got <parsererror>“.
+| Phoebus-Dateien müssen gültiges XML sein.
+| Test, XML-Prüfung
+
+| 11
+| Ohne `--env-file` nutzt der Container die Upstream-Vorgabe `EPICS_DEFAULT_PROTOCOL=pva`. Die
+Brücke liefert dann CA-Werte mit Präfix `ca://`.
+| Prüfskripte und Konfigurationen müssen beide Schreibweisen kennen.
+| `epicsWS.py`, Test
+
+| 12
+| Unter macOS läuft Podman in einer VM. `network_mode: host` meint das Netz der VM.
+| Der Browser auf dem Mac erreicht die PV-Brücke (Port 8080) vermutlich nicht. Nicht getestet.
+| Podman-Funktionsweise
+
+| 13
+| `podman compose build` scheiterte bei Git-Build-Kontexten. `podman build` mit Git-URL, das
+`scripts/build-images.sh` nutzt, funktionierte.
+| Für den Image-Bau das Skript verwenden.
+| Test
+|===
+
+[[tab-import]]
+== Migration von Phoebus nach WEISS
+
+WEISS importiert Phoebus-Anzeigen über **Import → From CSS/Phoebus** (nur `.bob`). Die Doku
+klassifiziert 45 Widget-Typen. Ergebnis laut Doku:
+
+[cols="2,1,6", options="header"]
+|===
+| Status | Anzahl | Typen
+
+| Unterstützt
+| 20
+| `label`, `textupdate`, `textentry`, `action_button`, `bool_button`, `combo`, `spinner`,
+`scaledslider`, `led`, `multi_state_led`, `byte_monitor`, `progressbar`, `rectangle`, `ellipse`,
+`picture`, `embedded`, `group`, `navtabs`, `xyplot`, `stripchart`
+
+| Noch nicht umgesetzt
+| 16
+| `checkbox`, `choice`, `meter`, `linearmeter`, `tank`, `thermometer`, `array`, `image`, `tabs`,
+`slide_button`, `thumbwheel`, `radio`, `table`, `polyline`, `template`, `3d viewer`
+
+| Nicht geplant
+| 9
+| `fileselector`, `text-symbol`, `symbol`, `scrollbar`, `databrowser`, `waterfallplotwidget`,
+`arc`, `polygon`, `webbrowser`
+|===
+
+Weitere Punkte aus der Doku:
+
+* Nicht unterstützte Widgets werden durch einen gestrichelten Rahmen ersetzt, mit Warnung.
+* Regeln und Skripte werden nicht übernommen.
+* Bilder (`.svg`, `.png`, `.jpg`, `.jpeg`) und eingebettete Displays müssen einzeln hochgeladen
+bzw. importiert werden, und die Pfade müssen übereinstimmen.
+* Das Ergebnis ist ein Ausgangspunkt. Jede Anzeige ist mit dem echten IOC zu testen.
+
+== Einordnung
+
+[cols="3,2,5", options="header"]
+|===
+| Szenario | Eignung | Begründung
+
+| Bediener-Anzeigen im Browser, ohne Installation auf den Arbeitsplätzen
+| WEISS
+| Zugang per Browser, zentrale Bereitstellung per Container.
+
+| Kontrollierte Freigabe von Anzeigen mit Versionsverlauf
+| WEISS
+| Git-Versionierung und Freigabe sind eingebaut. Voraussetzung ist ein HTTPS-Git-Server.
+
+| Bestehende Phoebus-Anzeigen mit Skripten, Tanks, Metern, Tabellen oder Symbolen
+| Phoebus
+| Diese Typen und Skripte fehlen oder werden beim Import nicht übernommen.
+
+| Alarmserver, Archiv-Auswertung, Logbuch, Scan
+| Phoebus
+| WEISS bietet dafür keine Entsprechung.
+
+| Lokale oder simulierte PVs und Formeln in Anzeigen
+| Phoebus
+| In WEISS im Code nicht gefunden.
+
+| Rechte je Benutzer auf einzelne PVs
+| Keines ohne Zusatzarbeit
+| WEISS: Der IOC sieht einen Client, die Brücke hat keine Prüfung. Phoebus: nicht geprüft.
+
+| Betrieb im Netz mit nicht vertrauenswürdigen Clients
+| WEISS nur mit Schutzmaßnahmen
+| Port 8080 und `/ws/` brauchen Proxy mit Anmeldeprüfung, Origin-Liste und Firewall, siehe
+Entscheidungspapier zur Absicherung des PV-Zugriffs.
+|===
+
+== Grenzen dieser Gegenüberstellung
+
+* Phoebus wurde nicht ausgeführt. Funktionen und Zahlen stammen aus Quellcode und Doku.
+* Die Anzahl der Widgets bei Phoebus zählt `WidgetDescriptor`-Kennungen im Produktivcode. Ob jede
+Kennung in der Palette erscheint, habe ich nicht geprüft.
+* Zeilenzahlen zählen Kommentare und Leerzeilen mit und sagen nichts über Qualität. Der
+Unterschied im Umfang erklärt sich auch dadurch, dass Phoebus weit mehr Anwendungen enthält.
+* Zu Leistung, Skalierung, Bedienbarkeit und Barrierefreiheit wurde nichts gemessen.
+* Die Sicherheitsaussagen zu WEISS gelten für den Commit `850afe2`. Eine Sicherheitsprüfung von
+Phoebus fand nicht statt.
+* Lizenzfragen (GPL-3.0-or-later gegenüber EPL 1.0) sind nicht rechtlich bewertet.
+* Die Roadmap beider Projekte wurde nicht bewertet.
+
+[[quellen]]
+== Quellenverzeichnis
+
+Alle Fundstellen sind auf die geprüften Commits fixiert (WEISS `850afe2`, Phoebus `f041c41`).
+
+.WEISS
+[cols="1,8"]
+|===
+| [[w1]]W1 | {weiss}README.md[README.md]: Zweck, Lizenz.
+| [[w2]]W2 | {weiss}docs/src/index.md[docs/src/index.md]: Funktionsliste, Referenzprojekte.
+| [[w3]]W3 | {weiss}package.json[package.json], {weiss}backend/api/pyproject.toml[backend/api/pyproject.toml], {weiss}backend/epicsWS/pyproject.toml[backend/epicsWS/pyproject.toml]: Technik, Versionen.
+| [[w4]]W4 | {weiss}src/components/Widgets[src/components/Widgets]: Widget-Verzeichnisse und Kategorien.
+| [[w5]]W5 | {weiss}backend/epicsWS/epicsWS.py[epicsWS.py], {weiss}backend/epicsWS/CAClient.py[CAClient.py], {weiss}backend/epicsWS/PVAClient.py[PVAClient.py]: PV-Brücke.
+| [[w6]]W6 | {weiss}backend/api/src/api/auth/%5F%5Finit%5F%5F.py[auth/++__++init++__++.py], {weiss}backend/api/src/api/auth/providers/oauth.py[providers/oauth.py], {weiss}backend/api/src/api/auth/providers/demo.py[providers/demo.py]: Anmeldung, Sitzungen.
+| [[w7]]W7 | {weiss}backend/api/src/api/repos/staging.py[repos/staging.py]: Git-Anbindung, Worktrees, Commit.
+| [[w8]]W8 | {weiss}docs/src/production/env_variables.md[env_variables.md], {weiss}docs/src/production/git_interaction.md[git_interaction.md], {weiss}docs/src/production/https.md[https.md], {weiss}docs/src/production/user_roles.md[user_roles.md]: Betrieb.
+| [[w9]]W9 | {weiss}docs/src/getting_started/importing_files.md[importing_files.md], {weiss}src/utils/bob2json[src/utils/bob2json]: Phoebus-Import.
+| [[w10]]W10 | {weiss}.github/workflows[.github/workflows]: CI (lint, docker-build, podman-build).
+| [[w11]]W11 | {weiss}src/constants/constants.ts[constants.ts], {weiss}src/hey-api-fetch.ts[hey-api-fetch.ts], {weiss}src/components/ScreenGuard/ScreenGuard.tsx[ScreenGuard.tsx]: Adressen, Mindestgröße.
+| [[w12]]W12 | {weiss}src/context/useUIManager.ts[useUIManager.ts]: Auto-Save, Moduswechsel.
+| [[w13]]W13 | {weiss}nginx/default.http.template[default.http.template], {weiss}nginx/default.https.template[default.https.template]: Proxy.
+| [[w14]]W14 | {weiss}src/components/RulesDialog[src/components/RulesDialog]: Regeln.
+| [[w15]]W15 | EPICS Base 7.0.9: `modules/libcom/src/osi/os/posix/osdProcess.c`, `modules/ca/src/client/cac.cpp` (Benutzername des CA-Clients).
+| [[w16]]W16 | {weiss}src/components/AlarmPanel[src/components/AlarmPanel], {weiss}src/components/AlarmBorder[src/components/AlarmBorder]: Alarmanzeige.
+| [[w17]]W17 | {weiss}src/utils/historyBuffers.tsx[historyBuffers.tsx]: Verlaufspuffer.
+| [[w18]]W18 | {weiss}src/components/SnapshotDialog[src/components/SnapshotDialog]: Snapshots.
+|===
+
+.Phoebus
+[cols="1,8"]
+|===
+| [[p1]]P1 | {phoebus}README.md[README.md], {phoebus}LICENSE[LICENSE], {phoebus}pom.xml[pom.xml]: Zweck, Lizenz, JDK, Version.
+| [[p2]]P2 | {phoebus}app[app], {phoebus}core[core], {phoebus}services[services]: Aufbau und Zählungen.
+| [[p3]]P3 | {phoebus}app/display/model/src/main/java/org/csstudio/display/builder/model/widgets[app/display/model/.../widgets]: Widget-Typen.
+| [[p4]]P4 | {phoebus}app/display/editor/doc/widgets.rst[widgets.rst], {phoebus}app/display/editor/doc/rules.rst[rules.rst], {phoebus}app/display/editor/doc/scripts.rst[scripts.rst], {phoebus}app/display/editor/doc/macros.rst[macros.rst]: Editor-Doku.
+| [[p5]]P5 | {phoebus}core/pv[core/pv], {phoebus}core/pv-ca[pv-ca], {phoebus}core/pv-pva[pv-pva], {phoebus}core/pv-mqtt[pv-mqtt], {phoebus}core/pv-tango[pv-tango], {phoebus}core/formula[formula]: PV-Protokolle.
+| [[p6]]P6 | {phoebus}docs/source/authorization.rst[docs/source/authorization.rst]: Authentifizierung, Autorisierung.
+| [[p7]]P7 | {phoebus}services/README.md[services/README.md]: Dienste (Alarm, Archiv, Save-and-Restore).
+| [[p8]]P8 | {phoebus}app/display/actions/src/main/java/org/csstudio/display/actions[app/display/actions]: Aktionen.
+| [[p9]]P9 | {phoebus}app/display/Readme.md[app/display/Readme.md]: Display Builder, BOY-Kompatibilität.
+| [[p10]]P10 | {phoebus}docs/source/docker.rst[docs/source/docker.rst], {phoebus}docs/source/conf.py[docs/source/conf.py]: Docker, Copyright.
+|===
