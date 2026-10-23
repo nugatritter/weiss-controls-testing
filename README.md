@@ -8,9 +8,12 @@ in rootless Podman-Containern, später als systemd-Dienst unter Ubuntu. Die Anle
 Dieses Repo enthält nur die Podman-Konfiguration. Der Upstream-Code wird beim Bauen direkt aus Git
 geladen. Upstream-Doku: <https://docs.weiss-controls.org/>
 
-> Teststand: Die drei Images bauen, die Test-SoftIOC läuft, und `weiss-epicsws` liest und schreibt
-> PVs über den WebSocket (Prüfung mit `scripts/check-ws.py`, siehe unten). Noch nicht geprüft:
-> Frontend im Browser, HTTPS und der systemd-Dienst über Quadlet.
+> Teststand: Die drei Images bauen, die Test-SoftIOC läuft, `weiss-epicsws` liest und schreibt
+> PVs über den WebSocket (Prüfung mit `scripts/check-ws.py`, siehe unten), und die Login-Seite der
+> Weboberfläche war im Browser erreichbar. Noch nicht geprüft: Bedienung der Oberfläche, HTTPS und der
+> systemd-Dienst über Quadlet.
+> Welche Grenzen WEISS selbst hat, steht im [Vergleich mit Phoebus](docs/vergleich-weiss-phoebus.adoc) und
+> in der [Kurzfassung unten](#bekannte-grenzen-von-weiss).
 
 ## Inhalt
 
@@ -23,6 +26,10 @@ geladen. Upstream-Doku: <https://docs.weiss-controls.org/>
 | `softioc/` | Optionale Test-SoftIOC mit Testvariablen (`Containerfile`, `test.db`, `st.cmd`) |
 | `quadlet/optional/` | Quadlet-Unit der Test-SoftIOC |
 | `roles.toml` | Rollen-Datei (Upstream-Beispiel, siehe [Rollen](#benutzerrollen)) |
+| `scripts/check-ws.py` | Prüft Lesen und Schreiben über die PV-Brücke (siehe [unten](#pv-brücke-über-den-websocket-prüfen)) |
+| `examples/weiss-test.bob` | Beispieldisplay im Phoebus-Format für die Test-SoftIOC |
+| `tests/` | Prüfskripte und Lauflog zu den Befunden im Vergleichsdokument ([Anleitung](tests/README.md)) |
+| `docs/vergleich-weiss-phoebus.adoc` | Vergleich WEISS und Phoebus (AsciiDoc) |
 
 ## Aufbau
 
@@ -43,9 +50,10 @@ Im HTTPS-Modus läuft beides über nginx (`/api/`, `/ws/`).
 sudo apt install podman podman-compose git     # Ubuntu 24.04: Podman 4.9, Quadlet ist enthalten
 ```
 
-**Port 80 rootless freigeben.** Die API erlaubt per CORS nur die Origin `http://APP_HOSTNAME` ohne
-Port. Die App muss deshalb auf Port 80 laufen (HTTPS später auf 443). Rootless darf das standardmäßig
-nicht:
+**Port 80 rootless freigeben.** Mit den Standardeinstellungen erlaubt die API per CORS nur die Origin
+`http://APP_HOSTNAME` ohne Port. Die App läuft deshalb auf Port 80 (HTTPS später auf 443). Abweichende Ports
+verlangen angepasste Adress-, CORS- und Proxy-Einstellungen; das wurde hier nicht getestet. Rootless darf
+Port 80 standardmäßig nicht binden:
 
 ```sh
 echo 'net.ipv4.ip_unprivileged_port_start=80' | sudo tee /etc/sysctl.d/99-weiss-ports.conf
@@ -53,7 +61,7 @@ sudo sysctl --system
 ```
 
 Das gilt für alle Benutzer des Rechners. Alternative: Portweiterleitung 80 → hochgelegener Port
-per nftables/iptables.
+per nftables/iptables. Der Browser nutzt dann weiterhin Port 80, die CORS-Origin bleibt gültig.
 
 **Firewall.** Erlaube eingehend TCP 80, 8000 und 8080 (HTTP-Modus). Eine Firewall kann außerdem
 EPICS-CA-Antworten (UDP) blockieren.
@@ -105,15 +113,33 @@ WEISS_REF=v1.2.3 scripts/build-images.sh    # Branch, Tag oder Commit; Standard:
 systemctl --user restart weiss-api weiss-epicsws weiss
 ```
 
+## Variante C: Container einzeln starten (Test)
+
+Ohne Compose und Quadlet lassen sich die Container von Hand starten, etwa zum Ausprobieren. Voraussetzung sind gebaute
+Images (`scripts/build-images.sh --with-softioc`) und die Konfiguration unter `~/.config/weiss/` (legt `scripts/install.sh` an).
+
+```sh
+podman run -d --name weiss-softioc --network host localhost/weiss-softioc:latest
+podman run -d --name weiss-epicsws --network host --env-file ~/.config/weiss/weiss.env localhost/weiss-epicsws:latest
+podman run -d --name weiss-api -p 8000:8000 --env-file ~/.config/weiss/weiss.env \
+  -v ~/.config/weiss/roles.toml:/config/roles.toml:ro -e ROLES_CONFIG_PATH=/config/roles.toml \
+  -v weiss-storage:/app/storage localhost/weiss-api:latest
+podman run -d --name weiss -p 80:8081 --env-file ~/.config/weiss/weiss.env localhost/weiss:latest
+```
+
+Das Volume `weiss-storage` ist wichtig: Ohne es liegen Repos, Worktrees und Snapshots im Container und gehen mit ihm
+verloren (`podman rm`). Das Frontend-Image bekommt `DEMO_MODE` beim Bauen, siehe [Demo-Modus](#demo-modus-und-anmeldung).
+
 ## EPICS Channel Access (lokal)
 
-`weiss-epicsws` läuft im **Host-Netzwerk**. Das funktioniert rootless und ist nötig, damit
-Channel Access (UDP-Suche und Broadcast, TCP 5064) wie auf dem Host arbeitet. Ohne Host-Netzwerk
-kämen CA-Broadcasts im rootless Bridge-Modus nicht durch.
+`weiss-epicsws` läuft hier im **Host-Netzwerk**. Das funktioniert rootless und ist die einfachste Lösung:
+Channel Access (UDP-Suche und Broadcast, TCP 5064) arbeitet dann wie auf dem Host. Zwingend ist es nicht,
+denn mit expliziter `EPICS_CA_ADDR_LIST`, veröffentlichten Ports oder einem Gateway sind andere
+Netzkonfigurationen möglich. Im rootless Bridge-Modus kommen CA-Broadcasts allerdings nicht durch.
 
 | Variable | Wert hier | Bedeutung |
 |---|---|---|
-| `EPICS_DEFAULT_PROTOCOL` | `ca` | Protokoll für PV-Namen ohne Präfix (`ca://` oder `pva://`). Upstream-Standard ist `pva`. |
+| `EPICS_DEFAULT_PROTOCOL` | `ca` | Protokoll für PV-Namen ohne Präfix (`ca://` oder `pva://`). Upstream-Standard ist `pva`. Bei `pva` fehlen ausdrücklich mit `ca://` abonnierte PVs im Snapshot. |
 | `EPICS_CA_ADDR_LIST` | `localhost` | Lokale IOCs. Für IOCs in anderen Netzen Host oder Broadcast-Adresse ergänzen. |
 | `EPICS_CA_AUTO_ADDR_LIST` | `YES` | Zusätzlich die Broadcast-Adressen der Host-Interfaces nutzen. |
 | `EPICS_CA_MAX_ARRAY_BYTES` | `1000000` | Maximale Arraygröße. Für große Waveforms erhöhen. |
@@ -121,7 +147,7 @@ kämen CA-Broadcasts im rootless Bridge-Modus nicht durch.
 | `EPICS_MAX_UPDATE_RATE_HZ` | `30` | Max. Update-Rate pro PV an Clients (`0` = ungedrosselt). |
 | `EPICS_MAX_CLIENT_QUEUE` | `1000` | Zu langsame Clients werden getrennt. |
 
-Rootless ändert an diesen Variablen nichts. Entscheidend ist nur das Host-Netzwerk.
+Rootless ändert an diesen Variablen nichts. Entscheidend ist das Netzwerk (Host-Netzwerk oder passende Adresslisten).
 
 **Wichtig beim Start:** Ohne `--env-file` nimmt der Container die Upstream-Standards, also
 `EPICS_DEFAULT_PROTOCOL=pva`. Die Brücke liefert dann CA-Werte mit Präfix (`ca://WEISS:TEST:COUNTER`).
@@ -185,6 +211,8 @@ siehst du die Werte und kannst `SETPOINT`, `SWITCH` und `MESSAGE` schreiben.
 Widgets, die der Importer unterstützt. Prüfe danach die Warnungen und die Layouts im Editor.
 
 ### PV-Brücke über den WebSocket prüfen
+
+Weitere Prüfskripte (Verhalten der Brücke und der Snapshot-API, mit Lauflog) stehen in [`tests/`](tests/README.md).
 
 `scripts/check-ws.py` verbindet sich mit `weiss-epicsws` auf Port 8080, wie es der Browser tut,
 und liest `WEISS:TEST:COUNTER`. Mit `--write` schreibt es außerdem `WEISS:TEST:SETPOINT = 42.5`
@@ -344,6 +372,23 @@ der direkten Ports.
    unveröffentlicht bleiben, und in der Firewall genügen 80 und 443. `weiss-epicsws` muss weiterhin
    auf dem Host erreichbar bleiben, weil nginx es über `host-gateway` anspricht. Port 8080 muss
    dafür von außen nicht offen sein, nur lokal erreichbar.
+
+## Bekannte Grenzen von WEISS
+
+Kurzfassung der Befunde aus dem [Vergleich mit Phoebus](docs/vergleich-weiss-phoebus.adoc), geprüft am WEISS-Commit
+`850afe2`. Die Skripte unter [`tests/`](tests/README.md) machen die meisten davon nachvollziehbar.
+
+- **PV-Brücke ungeschützt:** Sie prüft weder WEISS-Sitzung noch Rolle noch Origin. Port 8080 (HTTP) und `/ws/` (HTTPS)
+  gehören nur in ein vertrauenswürdiges Netz. NGINX `auth_request` schützt nur neue Verbindungen, nicht bereits offene.
+- **Sitzungen** liegen 24 Stunden im Arbeitsspeicher der API. Ein Neustart der API meldet alle Nutzer ab; offene
+  PV-Verbindungen bleiben bestehen.
+- **Snapshots:** Sie erfassen alle abonnierten PVs, auch reine Anzeigen. „Restore“ schreibt alles ohne Auswahl und Rückfrage
+  zurück, und die Erfolgsmeldung ist nicht verlässlich (fehlende PVs und Arrays zählen als Erfolg). Jeder angemeldete Nutzer darf
+  speichern und löschen. IDs haben Sekundenauflösung.
+- **Standardprotokoll `pva`:** Mit ausdrücklich abonnierten `ca://`-PVs ist der Snapshot leer. Diese Anleitung setzt
+  `EPICS_DEFAULT_PROTOCOL=ca`.
+- **Alarme:** Der „Alarm Summary“ zeigt nur PVs der geladenen Anzeige. Er hat kein Quittieren und keine Historie, und getrennte
+  PVs fehlen in der Liste.
 
 ## Fehlersuche
 
