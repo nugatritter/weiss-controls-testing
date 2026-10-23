@@ -1,10 +1,20 @@
 #!/bin/sh
-# Baut die drei WEISS-Images direkt aus dem Upstream-Git-Repo (rootless).
-# Nutzung: scripts/build-images.sh [env-datei]   (Standard: ~/.config/weiss/weiss.env)
+# Baut die WEISS-Images direkt aus dem Upstream-Git-Repo (rootless).
+# Nutzung: scripts/build-images.sh [--with-softioc] [env-datei]
+#   env-datei: Standard ~/.config/weiss/weiss.env
+#   --with-softioc: baut zusätzlich die Test-SoftIOC (dauert einige Minuten)
 # Version wählen: WEISS_REF=v1.2.3 scripts/build-images.sh
 set -eu
 
-ENV_FILE="${1:-$HOME/.config/weiss/weiss.env}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ENV_FILE="$HOME/.config/weiss/weiss.env"
+WITH_SOFTIOC=0
+for arg in "$@"; do
+    case "$arg" in
+        --with-softioc) WITH_SOFTIOC=1 ;;
+        *) ENV_FILE="$arg" ;;
+    esac
+done
 REF="${WEISS_REF:-main}"
 REPO="https://github.com/weiss-controls/weiss.git#$REF"
 
@@ -21,3 +31,7 @@ podman build --target prod \
     -t localhost/weiss:latest "$REPO"
 podman build -t localhost/weiss-epicsws:latest "$REPO:backend/epicsWS"
 podman build -t localhost/weiss-api:latest "$REPO:backend/api"
+
+if [ "$WITH_SOFTIOC" = 1 ]; then
+    podman build -t localhost/weiss-softioc:latest "$ROOT/softioc"
+fi

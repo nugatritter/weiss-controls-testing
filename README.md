@@ -17,8 +17,10 @@ geladen. Upstream-Doku: <https://docs.weiss-controls.org/>
 |---|---|
 | `compose.yaml`, `.env.example` | Schneller Start mit `podman compose` |
 | `quadlet/` | systemd-Units (Quadlet) für den Dauerbetrieb |
-| `scripts/build-images.sh` | Baut die drei Images aus der Upstream-Git-URL |
-| `scripts/install.sh` | Installiert Units und Konfiguration für den aktuellen Benutzer |
+| `scripts/build-images.sh` | Baut die drei Images aus der Upstream-Git-URL (`--with-softioc`: zusätzlich die Test-IOC) |
+| `scripts/install.sh` | Installiert Units und Konfiguration für den aktuellen Benutzer (`--with-softioc`: zusätzlich die Test-IOC) |
+| `softioc/` | Optionale Test-SoftIOC mit Testvariablen (`Containerfile`, `test.db`, `st.cmd`) |
+| `quadlet/optional/` | Quadlet-Unit der Test-SoftIOC |
 | `roles.toml` | Rollen-Datei (Upstream-Beispiel, siehe [Rollen](#benutzerrollen)) |
 
 ## Aufbau
@@ -28,6 +30,7 @@ geladen. Upstream-Doku: <https://docs.weiss-controls.org/>
 | `weiss` | nginx mit Frontend | Bridge, Host-Port **80** → Container 8081 |
 | `weiss-api` | FastAPI-Backend (Login, Git, Snapshots) | Bridge, Host-Port 8000 |
 | `weiss-epicsws` | WebSocket-Brücke zu EPICS (CA/PVA) | **Host-Netzwerk**, Port 8080 |
+| `weiss-softioc` (optional) | Test-SoftIOC mit `WEISS:TEST:*` | **Host-Netzwerk**, CA 5064, PVA 5075/5076 |
 
 Im HTTP-Modus verbindet sich der **Browser direkt** mit `http://<host>:8000` (API) und
 `ws://<host>:8080` (PVs). Beide Ports müssen vom Browser aus erreichbar sein, nicht nur vom Server.
@@ -115,15 +118,61 @@ kämen CA-Broadcasts im rootless Bridge-Modus nicht durch.
 
 Rootless ändert an diesen Variablen nichts. Entscheidend ist nur das Host-Netzwerk.
 
-**Test mit einem lokalen IOC** (falls EPICS Base installiert ist):
+**Test mit einem vorhandenen IOC auf dem Host:** `caget MY:PV` muss dort funktionieren. Im
+WEISS-Editor ein Widget mit dem PV-Namen `MY:PV` (oder `ca://MY:PV`) anlegen und in den
+Runtime-Modus wechseln. Logs: `podman logs weiss-epicsws`.
+
+### Test-SoftIOC mit Testvariablen (optional)
+
+`softioc/` enthält eine SoftIOC aus **EPICS Base 7.0.9** (CA und PVA), die du ohne eigenen IOC
+zum Testen nutzen kannst. Sie läuft wie `weiss-epicsws` im Host-Netzwerk, damit beide sich über
+`localhost` finden. Das Image wird beim ersten Mal aus dem Quellcode gebaut und braucht dafür einige
+Minuten. Ein anderer Stand lässt sich mit `--build-arg EPICS_BASE_REF=<tag>` wählen.
+
+| PV | Typ | Beschreibung |
+|---|---|---|
+| `WEISS:TEST:COUNTER` | calc | Zähler 0..99, 2 Hz |
+| `WEISS:TEST:SINE` | calc | Sinus 0..100, folgt dem Zähler |
+| `WEISS:TEST:SETPOINT` | ao | **schreibbar**, 0..100 V (der Treiber begrenzt auf 0..100) |
+| `WEISS:TEST:READBACK` | calc | Istwert, folgt dem Sollwert sofort |
+| `WEISS:TEST:SWITCH` | bo | **schreibbar**, Aus/Ein |
+| `WEISS:TEST:STATUS` | bi | Status, folgt dem Schalter |
+| `WEISS:TEST:MESSAGE` | stringout | **schreibbar**, Text |
+| `WEISS:TEST:WAVE` | waveform | Array mit 10 Werten (Quadratzahlen) |
+
+Eigene Variablen ergänzt du in `softioc/test.db` (danach Image neu bauen).
+
+**Start mit Compose:** der Dienst `weiss-softioc` ist in `compose.yaml` enthalten.
 
 ```sh
-softIoc -m "" -d test.db &      # oder ein vorhandener IOC
-caget MY:PV                     # muss auf dem Host funktionieren
+podman compose build weiss-softioc
+podman compose up -d weiss-softioc
 ```
 
-Im WEISS-Editor ein Widget mit dem PV-Namen `MY:PV` (oder `ca://MY:PV`) anlegen und in den
-Runtime-Modus wechseln. Logs: `podman logs weiss-epicsws`.
+**Start als systemd-Dienst:**
+
+```sh
+scripts/install.sh --with-softioc
+scripts/build-images.sh --with-softioc
+systemctl --user enable --now softioc.service
+```
+
+**Lesen und Schreiben prüfen** (`caget`/`caput` sind im Image enthalten):
+
+```sh
+podman exec weiss-softioc caget WEISS:TEST:COUNTER WEISS:TEST:SETPOINT
+podman exec weiss-softioc caput WEISS:TEST:SETPOINT 42.5
+podman exec weiss-softioc caget WEISS:TEST:READBACK        # folgt dem Sollwert: 42.5
+podman exec weiss-epicsws python -c "import epics; print(epics.caget('WEISS:TEST:SINE'))"
+```
+
+Im WEISS-Editor Widgets mit diesen PV-Namen anlegen und in den Runtime-Modus wechseln, dann
+siehst du die Werte und kannst `SETPOINT`, `SWITCH` und `MESSAGE` schreiben.
+
+Läuft zusätzlich ein IOC auf dem Host, teilen sich beide UDP-Port 5064. Die Suche per Broadcast
+erreicht beide (`EPICS_CA_AUTO_ADDR_LIST=YES`). Für eine eindeutige Adressierung kannst du der
+Test-IOC einen eigenen Port geben (`Environment=EPICS_CA_SERVER_PORT=5164` in der Unit) und
+`localhost:5164` in `EPICS_CA_ADDR_LIST` ergänzen.
 
 ## Demo-Modus und Anmeldung
 

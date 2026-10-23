@@ -48,6 +48,15 @@ services:
       EPICS_MAX_UPDATE_RATE_HZ: ${EPICS_MAX_UPDATE_RATE_HZ:-30}
       EPICS_MAX_CLIENT_QUEUE: ${EPICS_MAX_CLIENT_QUEUE:-1000}
 
+  # Optionale Test-SoftIOC mit Testvariablen WEISS:TEST:* (siehe README).
+  weiss-softioc:
+    build:
+      context: ./softioc
+    image: localhost/weiss-softioc:${WEISS_TAG:-latest}
+    container_name: weiss-softioc
+    restart: unless-stopped
+    network_mode: host
+
   weiss-api:
     build:
       context: https://github.com/weiss-controls/weiss.git#${WEISS_REF:-main}:backend/api
