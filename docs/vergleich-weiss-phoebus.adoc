@@ -38,6 +38,11 @@ dagegen eigene IOCs mit simulierten Variablen mit. | <<tab-widgets>>, <<tab-pv>>
 integrierte Git-Versionierung mit Freigabe-Workflow und eine Anmeldung über OAuth2/OIDC. |
 <<tab-grundlagen>>, <<tab-versionierung>>
 
+| WEISS hat „Alarms“ und „Snapshots“, aber in einfacher Form. Der Alarm-Summary zeigt nur die PVs der
+geladenen Anzeige, ohne Quittieren und ohne Historie. Snapshots sichern alle abonnierten PVs, und
+„Restore“ schreibt alles ohne Rückfrage zurück. Jeder angemeldete Nutzer darf das, und niemand
+wird als Urheber festgehalten. | <<tab-alarme>>, <<tab-snapshots>>
+
 | Der PV-Zugriff in WEISS ist nicht abgesichert. Die PV-Brücke prüft weder Anmeldung noch Rolle
 noch Origin, und der IOC sieht alle WEISS-Nutzer als einen einzigen Client. Das ist im Live-Test
 bestätigt. | <<tab-sicherheit>>, <<tab-praxis>>
@@ -67,6 +72,10 @@ von WEISS gesucht und nicht gefunden. Übersehen wurde, dass die Doku auf zwei w
 verweist, die für Demo und Test simulierte Variablen bereitstellen. Die Tabellen in
 <<tab-pv>> und <<tab-umfeld>> sind entsprechend ergänzt.
 
+NOTE: Zweite Korrektur: Die Zeilen zu Alarmen und Snapshots beruhten in den früheren Fassungen nur
+auf dem Anfang der jeweiligen Dateien. Sie sind durch die Abschnitte <<tab-alarme>> und
+<<tab-snapshots>> ersetzt, die auf dem vollständigen Code und auf Live-Tests beruhen.
+
 Vorgehen:
 
 * Beide Repositories wurden geklont und im Quellcode sowie in der mitgelieferten Dokumentation
@@ -78,6 +87,9 @@ PV-Brücke und Frontend, Lese- und Schreibzugriff über den WebSocket gegen eine
 EPICS Base 7.0.9.
 * **Phoebus** wurde nicht gebaut und nicht gestartet. Aussagen zu Phoebus beruhen auf Quellcode und
 Dokumentation, nicht auf Praxisbetrieb.
+* Für **Alarme und Snapshots** wurden zusätzlich die echte WEISS-API (Demo-Modus) und die echte
+PV-Brücke mit der Test-IOC live angesprochen. Die Oberfläche selbst habe ich nicht im Browser
+bedient. Aussagen zu ihr stammen aus dem Quellcode.
 * Die Webseite `docs.weiss-controls.org` war aus der Prüfumgebung nicht erreichbar. Als Ersatz
 diente der Ordner `docs/` im Repository, aus dem die Seite gebaut wird.
 
@@ -397,10 +409,11 @@ offene PV-Verbindungen nicht.
 | Kriterium | WEISS | Phoebus | Belege
 
 | Alarmsystem
-| Alarmrand an Widgets und ein Alarm-Panel, das die Alarme der geladenen PVs zusammenfasst.
-Kein Alarmserver.
-| Alarmserver (Kafka), Alarm-Oberfläche, Alarm-Logger, Konfigurations-Logger.
-| <<w16,W16>>, <<p2,P2>>, <<p7,P7>>
+| Dialog „Alarm Summary“ im Browser, gespeist aus den PV-Updates der geladenen Anzeige. Kein
+Alarmserver, kein Quittieren, keine Historie. Siehe <<tab-alarme>>.
+| Alarmserver (Kafka) mit Alarm-Baum, -Tabelle und -Flächenansicht, Quittieren, Konfiguration,
+Ansage und Alarm-Logger. Siehe <<tab-alarme>>.
+| <<w16,W16>>, <<w22,W22>>, <<p12,P12>>
 
 | Archiv und Historie
 | Verlaufspuffer im Browser für Plots. Keine Archiv-Anbindung.
@@ -408,9 +421,10 @@ Kein Alarmserver.
 | <<w17,W17>>, <<p2,P2>>, <<p7,P7>>
 
 | Zustände sichern und laden
-| Snapshot-Dialog, Ablage über die API, Wiederherstellen über die PV-Brücke.
-| Save-and-Restore als Anwendung und Dienst.
-| <<w5,W5>>, <<w18,W18>>, <<p7,P7>>
+| Dialog „PV Snapshots“: Werte der abonnierten PVs sichern, vergleichen und wiederherstellen.
+Siehe <<tab-snapshots>>.
+| Save-and-Restore als Anwendung und zentraler Dienst. Siehe <<tab-snapshots>>.
+| <<w5,W5>>, <<w18,W18>>, <<w23,W23>>, <<p13,P13>>
 
 | Logbuch
 | Nicht vorhanden.
@@ -434,6 +448,177 @@ Sie lassen sich über den Dateibrowser von WEISS importieren.
 | 93 Einträge im Beispielordner des Display Builders, darunter Regeln, Skripte, Datenquellen und
 Formeln.
 | <<w19,W19>>, <<w20,W20>>, <<w21,W21>>, <<p11,P11>>
+|===
+
+[[tab-alarme]]
+=== Alarme im Detail
+
+In WEISS gibt es die Schaltfläche „Alarms“ nur im Runtime-Modus, für Developer und Operatoren.
+Sie ist eine Anzeige für den lokalen Browser, kein Alarmsystem im Sinne von Phoebus.
+
+[cols="2,5,5,1", options="header"]
+|===
+| Kriterium | WEISS | Phoebus | Belege
+
+| Aufruf
+| Schaltfläche „Alarms“ in der Kopfzeile. Sie zeigt die Zahl der PVs im Alarm und färbt sich ab dem
+ersten Alarm rot.
+| Eigene Anwendungen: Alarm-Baum, Alarm-Tabelle, Alarm-Flächenansicht und Annunciator-Tabelle.
+| <<w22,W22>>, <<p12,P12>>
+
+| Datenbasis
+| Nur die PVs, die dieser Browser für die geladene Anzeige abonniert hat. Den Schweregrad liefern
+die PV-Updates (EPICS-Alarmstatus). Es gibt keinen Server dafür.
+| Alarmserver auf Basis von Kafka (kompaktierte Topics für Konfiguration und Zustand). Clients
+erhalten beim Abonnieren den aktuellen Zustand, unabhängig von geöffneten Anzeigen.
+| <<w16,W16>>, <<p12,P12>>
+
+| Schweregrade
+| MINOR, MAJOR und INVALID (EPICS-Werte 1 bis 3). Bestätigte Zustände gibt es nicht.
+| OK, MINOR, MAJOR, INVALID und UNDEFINED, jeweils auch als bestätigte Variante (zum Beispiel
+`MAJOR_ACK`). Wann UNDEFINED gesetzt wird, habe ich nicht geprüft.
+| <<w16,W16>>, <<p12,P12>>
+
+| Getrennte PVs
+| Bei Verbindungsverlust entfernt das Frontend die PV aus seinem Speicher. Sie steht dann nicht in der
+Liste und wird nicht mitgezählt. Das Widget zeigt nur einen gepunkteten Rand.
+| Nicht verglichen.
+| <<w24,W24>>, <<w16,W16>>
+
+| Darstellung
+| Dialog „Alarm Summary“: Tabelle mit Symbol, PV-Name, Schweregrad, Wert mit Einheit und Zeit.
+Filter nach Namen und Schweregrad, Zähler je Schweregrad, Sortierung nach Schweregrad und Name.
+| Baum der Anlage mit Alarmzuständen, Tabelle aktiver und bestätigter Alarme, Flächenansicht. Die
+Spalten im Einzelnen habe ich nicht verglichen.
+| <<w16,W16>>, <<p12,P12>>
+
+| Alarmrand am Widget
+| Eigenschaft `alarmBorder`, standardmäßig an. Im Runtime-Modus zeichnen 14 Widgets einen Rand von
+3 Pixeln: durchgezogen bei MINOR und MAJOR in der jeweiligen Farbe, gestrichelt bei INVALID,
+gepunktet ohne Verbindung. Bei mehreren PVs zählt der schlimmste Schweregrad.
+| Widget-Eigenschaft `border_alarm_sensitive`. Die Darstellung habe ich nicht verglichen.
+| <<w16,W16>>, <<w24,W24>>, <<p3,P3>>
+
+| Quittieren
+| Nicht vorhanden.
+| Quittieren und Rücknahme (`AcknowledgeAction`, `UnAcknowledgeAction`). Das Recht dazu steuert
+`alarm_ack` in der `authorization.conf`.
+| <<p6,P6>>, <<p12,P12>>
+
+| Konfiguration
+| Keine. WEISS kennt keine Alarmliste, keine Verzögerung und keine Filter. Grenzwerte und
+Schweregrade kommen vom IOC.
+| Je PV: Beschreibung, aktiv oder deaktiviert (auch bis zu einem Datum), Verriegelung, Ansage,
+Verzögerung, Zähler, Filter-Ausdruck, Hilfetext, zugehörige Anzeigen und Befehle. Das Recht dazu
+steuert `alarm_config`.
+| <<p6,P6>>, <<p12,P12>>
+
+| Historie und Protokoll
+| Keine. Der Zustand lebt nur im Browser.
+| Alarm-Logger-Dienst und Konfigurations-Logger. Laut Dienst-Readme nutzt der Alarm-Logger
+Elasticsearch.
+| <<p7,P7>>, <<p12,P12>>
+
+| Akustik
+| Nicht vorhanden.
+| Annunciator mit Audio und Sprachausgabe (Module `audio-annunciator` und `freetts-annunciator`).
+| <<p12,P12>>
+
+| Mehrere Bediener
+| Jeder Browser sieht nur seinen eigenen Stand, abhängig von der geladenen Anzeige.
+| Ein gemeinsamer Zustand im Server für alle Clients.
+| <<w16,W16>>, <<p12,P12>>
+|===
+
+Die 14 Widgets mit Alarmrand sind ActionButton, BitIndicator, GraphXY, GraphY, Histogram,
+InputField, MultiBitIndicator, MultiStateLED, ProgressBar, SelectionBox, Slider, Spinner,
+TextUpdate und ToggleButton. Weitere Widgets, etwa Rectangle oder TextLabel, haben die Eigenschaft,
+zeichnen aber keinen Rand.
+
+[[tab-snapshots]]
+=== Snapshots im Detail
+
+Die Schaltfläche „Snapshots“ gibt es in WEISS ebenfalls nur im Runtime-Modus, für Developer und
+Operatoren. Das Verhalten der API und der PV-Brücke wurde live geprüft (API im Demo-Modus, Brücke
+mit Test-IOC über Channel Access). Die Oberfläche selbst wurde nicht im Browser bedient. Das
+Nachrichtenmuster der Oberfläche beim Wiederherstellen wurde nachgestellt.
+
+[cols="2,5,5,1", options="header"]
+|===
+| Kriterium | WEISS | Phoebus | Belege
+
+| Aufruf
+| Schaltfläche „Snapshots“. Dialog „PV Snapshots“ mit den Reitern Save, Saved, Compare und View.
+| Anwendung „Save-and-Restore“ mit Baumansicht. Die Daten liegen in einem zentralen Dienst.
+| <<w22,W22>>, <<w18,W18>>, <<p13,P13>>
+
+| Erfasster Umfang
+| Beim Speichern liest die PV-Brücke die aktuellen Werte aller PVs, die dieser Browser für die
+geladene Anzeige abonniert hat, auch reiner Anzeige-PVs, jeweils mit Alarm und Zeitstempel. Eine
+Auswahl gibt es nicht. Bild-PVs werden nie gespeichert. Live: acht Test-PVs, darunter vier reine
+Anzeigen.
+| Eine Konfiguration legt vorab fest, welche PVs gesichert werden, optional mit Readback-PV,
+Schreibschutz-Kennzeichen, Vergleichsmodus und Toleranz. Ein Snapshot liest diese PVs.
+| <<w5,W5>>, <<w18,W18>>, <<p13,P13>>
+
+| Struktur
+| Flache Liste je OPI-Datei mit Name, Zeitpunkt und PV-Anzahl.
+| Baum aus Ordnern, Konfigurationen, Snapshots und zusammengesetzten Snapshots. Tags (unter
+anderem „golden“), Filter, Kopieren, Verschieben, CSV-Import und -Export.
+| <<w18,W18>>, <<p13,P13>>
+
+| Speicherort
+| Eine JSON-Datei je Snapshot unter `/app/storage/snapshots/<Dateipfad mit Unterstrichen>/<ID>.json`
+im API-Container. Ohne Volume gehen sie mit dem Container verloren.
+| Zentraler Dienst (Spring Boot) mit Elasticsearch.
+| <<w23,W23>>, <<p13,P13>>
+
+| Wiederherstellen: Verfahren
+| Ein Klick auf „Restore“ schreibt alle gespeicherten Werte zurück. Es gibt weder eine Auswahl noch
+eine Rückfrage.
+| Wiederherstellen aus dem Client oder aus dem Dienst. Als schreibgeschützt markierte PVs werden
+übersprungen. Bei einem Fehlschlag listet der Logbuch-Eintrag die betroffenen PVs auf.
+| <<w18,W18>>, <<p13,P13>>
+
+| Wiederherstellen: Ergebnis
+| Auch reine Anzeige-PVs werden geschrieben (live: ein Zähler wurde auf 50 gesetzt). Die
+Erfolgsmeldung zählt jeden Auftrag als Erfolg: Im Test galten eine nicht vorhandene PV und eine
+Array-PV als „9 von 9 erfolgreich“. Array-Werte stehen nur als `b64arr` im Snapshot, `value` ist
+leer, und die Wiederherstellung sendet nur `value`. Arrays lassen sich so nicht zurückschreiben
+(Schreibfehler im Log der Brücke).
+| Fehlgeschlagene Schreibvorgänge werden erkannt und gemeldet (laut Doku im Logbuch-Eintrag).
+| <<w5,W5>>, <<w23,W23>>, <<w24,W24>>, <<p13,P13>>
+
+| Vergleich
+| Zwei gespeicherte Snapshots nebeneinander, Zeilen mit Unterschied zuerst. Verglichen wird der Text
+der JSON-Werte, ohne Toleranz. Ein Vergleich mit den Live-Werten fehlt.
+| Snapshot gegen Snapshot und gegen Live-Werte. Vergleichsmodus absolut oder relativ, Toleranz je
+PV. Der Dienst bietet dafür einen Compare-Endpunkt.
+| <<w18,W18>>, <<p13,P13>>
+
+| Rechte
+| Die API prüft nur die Anmeldung. Jeder angemeldete Nutzer, auch ein Operator, darf Snapshots
+speichern und löschen. Das Wiederherstellen läuft über die PV-Brücke, die gar nichts prüft. Alle
+Nutzer einer Anzeige sehen alle ihre Snapshots und können sie löschen (live: Operator speichert,
+Developer löscht).
+| Lesen ohne Anmeldung, Ändern nur nach Anmeldung. Rollen `sar-user` und `sar-admin`. Benutzer dürfen
+eigene Objekte ändern und löschen. Standardmäßig hebt `authorization.permitall=true` die
+Rollenprüfung auf.
+| <<w23,W23>>, <<w5,W5>>, <<p13,P13>>
+
+| Nachvollziehbarkeit
+| Es wird nicht festgehalten, wer einen Snapshot angelegt, wiederhergestellt oder gelöscht hat.
+Das gespeicherte JSON enthält keinen Benutzer, und das Zugriffslog der API nennt keinen.
+| Objekte tragen Benutzername und Datum (Tooltip im Baum). Optional entsteht ein Logbuch-Eintrag
+beim Speichern und Wiederherstellen.
+| <<w23,W23>>, <<p13,P13>>
+
+| Eindeutigkeit der Ablage
+| Die ID ist der Zeitpunkt auf die Sekunde. Zwei Speicherungen in derselben Sekunde überschreiben
+sich (live: „erster“ ging verloren). Dateipfade werden zu Ordnernamen umgeschrieben (`/` wird `_`):
+`A/b.opi.json` und `A_b.opi.json` teilen sich einen Ordner (live bestätigt).
+| Namen müssen je übergeordnetem Knoten und Knotentyp eindeutig sein.
+| <<w23,W23>>, <<p13,P13>>
 |===
 
 [[tab-reife]]
@@ -518,7 +703,7 @@ Datei auf `.opi.json` endet und einem Repo zugeordnet ist. Der Schreibvorgang l�
 nach der letzten Änderung.
 | Ein Reload davor oder ein fehlgeschlagener Schreibvorgang verwirft Inhalte. Gespeichert wird im
 Server-Speicher, nicht im Browser.
-| `useUIManager.ts`
+| <<w12,W12>>, `useUIManager.ts`
 
 | 8
 | Repos und Worktrees liegen in `/app/storage`. Ohne Volume gehen sie mit dem Container verloren.
@@ -567,6 +752,31 @@ auf Basis von `micromamba`, und laufen im Host-Netzwerk.
 | Der Bau braucht Zugriff auf diesen Kanal. Aus meiner Umgebung war er nicht erreichbar; ob er
 öffentlich zugänglich ist, habe ich nicht geprüft. Unter Podman wurde nichts davon getestet.
 | `.condarc`, `docker-compose.yml`
+
+| 16
+| Ein Snapshot sichert alle abonnierten PVs einer Anzeige, auch reine Anzeigen. „Restore“ schreibt
+sie alle zurück, ohne Auswahl und ohne Rückfrage. Die Erfolgsmeldung zählt jeden Auftrag als
+Erfolg, auch bei nicht vorhandenen PVs und bei Arrays.
+| Eine Wiederherstellung kann laufende Anzeigewerte überschreiben und Fehlschläge verbergen. Nach
+jeder Wiederherstellung am IOC prüfen.
+| Live-Test (Brücke), `SnapshotDialog.tsx`
+
+| 17
+| Die Snapshot-API prüft nur die Anmeldung. Ein Operator darf speichern und löschen, und das JSON
+enthält keinen Benutzer.
+| Kein Rollenschutz und keine Nachvollziehbarkeit für Snapshots.
+| Live-Test (API), `snapshots.py`
+
+| 18
+| Snapshot-IDs haben Sekundenauflösung, und Dateipfade werden zu Ordnernamen umgeschrieben.
+| Gleichzeitige Speicherungen überschreiben sich, und Anzeigen mit ähnlichen Pfaden teilen sich
+Snapshots.
+| Live-Test (API)
+
+| 19
+| Der Alarm-Summary zeigt nur PVs im Speicher des Browsers. Getrennte PVs werden daraus entfernt.
+| Eine verlorene IOC-Verbindung steht nicht in der Alarmliste, nur als gepunkteter Rand am Widget.
+| `useEpicsWS.ts`, `AlarmPanel.tsx`
 |===
 
 [[tab-import]]
@@ -630,6 +840,18 @@ bzw. importiert werden, und die Pfade müssen übereinstimmen.
 | Phoebus
 | `loc`, `sim`, `sys` und `formula` gibt es in WEISS im Code nicht.
 
+| Zentrale Alarmverwaltung mit Quittieren, Historie und Ansage
+| Phoebus
+| WEISS zeigt nur den lokalen Alarmstand der geladenen Anzeige.
+
+| Schnelle Sicherung der Anzeigewerte ohne Vorbereitung
+| WEISS
+| Ein Dialog, ein Klick. Dafür gibt es keine Auswahl, keine Rechte und keine Nachvollziehbarkeit.
+
+| Kontrollierte Wiederherstellung von Sollwerten mit Schreibschutz, Rechten und Toleranzvergleich
+| Phoebus
+| Save-and-Restore mit Konfigurationen, Rollen und Vergleich mit Live-Werten.
+
 | Demo und Test mit simulierten Daten
 | Beide
 | WEISS: über `weiss-demo-iocs` (echte Soft-IOCs, eigener Aufbau nötig). Phoebus: `sim://` ohne IOC.
@@ -658,6 +880,9 @@ Phoebus fand nicht statt.
 * Die Roadmap beider Projekte wurde nicht bewertet.
 * Die öffentliche Live-Demo von WEISS habe ich nicht aufgerufen. Angaben zu ihr stammen aus dem
 Readme von `weiss-demo-iocs`.
+* Das Alarmsystem und Save-and-Restore von Phoebus habe ich nur aus Doku und Quellcode beschrieben,
+nicht ausgeführt.
+* Die Alarm- und Snapshot-Dialoge von WEISS habe ich nicht im Browser bedient.
 * Die Demo-IOCs habe ich weder gebaut noch gestartet. Ihre Beschreibung beruht auf den Dateien im
 Repository.
 
@@ -690,6 +915,9 @@ Alle Fundstellen sind auf die geprüften Commits fixiert (WEISS `850afe2`, Phoeb
 | [[w19]]W19 | Repository `weiss-demo-iocs`: {demoiocs}README.md[README.md], {demoiocs}docker-compose.yml[docker-compose.yml], {demoiocs}Dockerfile[Dockerfile], {demoiocs}.condarc[.condarc], {demoiocs}genericIO/st.cmd[genericIO/st.cmd], {demoiocs}genericIO/Db/genericIO.db[genericIO.db], {demoiocs}genericIO/Db/3PhaseSyst.db[3PhaseSyst.db], {demoiocs}motorSim/st.cmd[motorSim/st.cmd], {demoiocs}ADSim/st.cmd[ADSim/st.cmd] (Commit `03c6321`).
 | [[w20]]W20 | Repository `weiss-demo-opis`: {demoopis}README.md[README.md], {demoopis}Example1/example-widget-gallery.opi.json[Example1], {demoopis}Example2/example-motion.opi.json[Example2], {demoopis}Example3/example-process.opi.json[Example3], {demoopis}Example4/example-IO.opi.json[Example4], {demoopis}Example5/ADSim.opi.json[Example5] (Commit `72c6b28`).
 | [[w21]]W21 | {weiss}docs/src/developer/source.md[source.md], {weiss}docs/src/getting_started/quickstart.md[quickstart.md], {weiss}docker-compose-dev.yml[docker-compose-dev.yml]: Verweise auf die Demo-IOCs, Entwicklungs-Compose.
+| [[w22]]W22 | {weiss}src/components/NavBar/NavBar.tsx[NavBar.tsx]: Schaltflächen „Alarms“ und „Snapshots“, Sichtbarkeit nach Modus und Rolle.
+| [[w23]]W23 | {weiss}backend/api/src/api/snapshots/snapshots.py[snapshots/snapshots.py]: Snapshot-API (Rechte, Ablage, IDs).
+| [[w24]]W24 | {weiss}src/context/useEpicsWS.ts[useEpicsWS.ts], {weiss}src/services/WSClient/WSClient.ts[WSClient.ts], {weiss}src/types/widgetProperties.ts[widgetProperties.ts]: Verbindungsverlust, Snapshot- und Restore-Aufrufe, Eigenschaft `alarmBorder`.
 |===
 
 .Phoebus
@@ -697,7 +925,7 @@ Alle Fundstellen sind auf die geprüften Commits fixiert (WEISS `850afe2`, Phoeb
 |===
 | [[p1]]P1 | {phoebus}README.md[README.md], {phoebus}LICENSE[LICENSE], {phoebus}pom.xml[pom.xml]: Zweck, Lizenz, JDK, Version.
 | [[p2]]P2 | {phoebus}app[app], {phoebus}core[core], {phoebus}services[services]: Aufbau und Zählungen.
-| [[p3]]P3 | {phoebus}app/display/model/src/main/java/org/csstudio/display/builder/model/widgets[app/display/model/.../widgets]: Widget-Typen.
+| [[p3]]P3 | {phoebus}app/display/model/src/main/java/org/csstudio/display/builder/model/widgets[app/display/model/.../widgets]: Widget-Typen; {phoebus}app/display/model/src/main/java/org/csstudio/display/builder/model/properties/CommonWidgetProperties.java[CommonWidgetProperties.java]: Widget-Eigenschaften (zum Beispiel `border_alarm_sensitive`).
 | [[p4]]P4 | {phoebus}app/display/editor/doc/widgets.rst[widgets.rst], {phoebus}app/display/editor/doc/rules.rst[rules.rst], {phoebus}app/display/editor/doc/scripts.rst[scripts.rst], {phoebus}app/display/editor/doc/macros.rst[macros.rst]: Editor-Doku.
 | [[p5]]P5 | {phoebus}core/pv[core/pv], {phoebus}core/pv-ca[pv-ca], {phoebus}core/pv-pva[pv-pva], {phoebus}core/pv-mqtt[pv-mqtt], {phoebus}core/pv-tango[pv-tango], {phoebus}core/formula[formula]: PV-Protokolle.
 | [[p6]]P6 | {phoebus}docs/source/authorization.rst[docs/source/authorization.rst]: Authentifizierung, Autorisierung.
@@ -706,4 +934,6 @@ Alle Fundstellen sind auf die geprüften Commits fixiert (WEISS `850afe2`, Phoeb
 | [[p9]]P9 | {phoebus}app/display/Readme.md[app/display/Readme.md]: Display Builder, BOY-Kompatibilität.
 | [[p10]]P10 | {phoebus}docs/source/docker.rst[docs/source/docker.rst], {phoebus}docs/source/conf.py[docs/source/conf.py]: Docker, Copyright.
 | [[p11]]P11 | {phoebus}app/display/model/src/main/resources/examples[app/display/model/.../examples], {phoebus}core/pv/src/main/java/org/phoebus/pv/sim[core/pv/.../sim]: Beispielanzeigen, simulierte PVs.
+| [[p12]]P12 | Phoebus-Alarmsystem: {phoebus}app/alarm/Readme.md[app/alarm/Readme.md], {phoebus}app/alarm/model/src/main/java/org/phoebus/applications/alarm/model/SeverityLevel.java[SeverityLevel.java], {phoebus}app/alarm/model/src/main/java/org/phoebus/applications/alarm/model/AlarmTreeLeaf.java[AlarmTreeLeaf.java], {phoebus}app/alarm/ui/src/main/java/org/phoebus/applications/alarm/ui/tree[ui/tree], {phoebus}app/alarm/ui/src/main/java/org/phoebus/applications/alarm/ui/table[ui/table], {phoebus}app/alarm/ui/src/main/java/org/phoebus/applications/alarm/ui/area[ui/area], {phoebus}app/alarm/ui/src/main/java/org/phoebus/applications/alarm/ui/annunciator[ui/annunciator], {phoebus}services/alarm-server[services/alarm-server], {phoebus}services/alarm-logger[services/alarm-logger].
+| [[p13]]P13 | Phoebus Save-and-Restore: {phoebus}app/save-and-restore/app/doc/index.rst[Anwendung (Doku)], {phoebus}services/save-and-restore/doc/index.rst[Dienst (Doku)], {phoebus}services/save-and-restore/pom.xml[Dienst (pom.xml)].
 |===
