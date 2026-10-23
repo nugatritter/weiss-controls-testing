@@ -180,6 +180,10 @@ podman exec weiss-epicsws python -c "import epics; print(epics.caget('WEISS:TEST
 Im WEISS-Editor Widgets mit diesen PV-Namen anlegen und in den Runtime-Modus wechseln, dann
 siehst du die Werte und kannst `SETPOINT`, `SWITCH` und `MESSAGE` schreiben.
 
+**Fertiges Beispieldisplay:** `examples/weiss-test.bob` zeigt alle Test-PVs. Import im Editor über
+**Import → From CSS/Phoebus** (eingeloggt als Developer, neue Datei anlegen). Die Datei nutzt nur
+Widgets, die der Importer unterstützt. Prüfe danach die Warnungen und die Layouts im Editor.
+
 ### PV-Brücke über den WebSocket prüfen
 
 `scripts/check-ws.py` verbindet sich mit `weiss-epicsws` auf Port 8080, wie es der Browser tut,
